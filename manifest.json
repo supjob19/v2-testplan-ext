@@ -1,0 +1,25 @@
+{
+    "manifest_version": 3,
+    "name": "Testplan-Extension",
+    "description": "Autovervollständigung von Befehlen für das Erstellen von Testplänen - v2",
+    "version": "0.2.1",
+    "options_page": "settings/settings.html",
+    "action": {
+        "default_title": "Testplan-Autovervollständigung",
+        "default_popup": "startmsg.html",
+        "default_icon": "startimg.png"
+    },
+    "permissions": [
+        "activeTab", "storage"
+    ],
+    "host_permissions": [
+        "*://*/*"
+    ],
+    "background": {
+        "service_worker": "service-worker.js"
+    },
+    "content_scripts": [{
+        "js": ["foreground.js"],
+        "matches": ["<all_urls>"]
+    }]
+}
