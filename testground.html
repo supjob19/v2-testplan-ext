@@ -1,9 +1,7 @@
 <!DOCTYPE html>
 <html lang="de">
-
 <head>
-  <script src="https://cdn.tiny.cloud/1/0d2qfdac4rrm3ozqszz9t6pds7j69cgyk8ukn8q31rl3fvw4/tinymce/7/tinymce.min.js"
-    referrerpolicy="origin"></script>
+  <script src="https://cdn.tiny.cloud/1/0d2qfdac4rrm3ozqszz9t6pds7j69cgyk8ukn8q31rl3fvw4/tinymce/6/tinymce.min.js" referrerpolicy="origin"></script>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Autocomplete Test</title>
@@ -65,7 +63,51 @@
       border-radius: 4px;
       margin-top: 20px;
     }
+
+    .autocomplete-item {
+        padding: 5px;
+        cursor: pointer;
+        background-color: #fff;
+        border: 1px solid #ccc;
+        margin-top: -1px;
+        font-family: Arial, sans-serif;
+    }
+
+    .autocomplete-suggestion-text {
+        font-weight: bold;
+    }
+
+    .autocomplete-suggestion-description {
+        font-size: 0.8em;
+        color: #666;
+    }
+
+    .autocomplete-item.highlight {
+        background-color: #f0f0f0;
+    }
+
+    .autocomplete-item:hover {
+        background-color: #ddd;
+    }
+
+    #autocomplete-tooltip {
+        position: absolute;
+        z-index: 1000;
+        background-color: #fff;
+        border: 1px solid #ccc;
+        box-shadow: 0px 4px 8px rgba(0, 0, 0, 0.1);
+    }
   </style>
+</head>
+<body>
+  <header>
+    <h4>Web-Testground</h4>
+    <img src="digital.png" alt="Digital" style="height: 30px;">
+  </header>
+  <iframe id="mce_0_ifr"></iframe>
+  <div id="inputWrapper">
+    <button id="resetButton">RESET</button>
+  </div>
   <script>
     document.addEventListener('DOMContentLoaded', function () {
       tinymce.init({
@@ -82,6 +124,8 @@
         setup: function (editor) {
           editor.on('init', function () {
             console.log('Editor initialized.');
+            editor.on('input', handleInput);
+            editor.on('keydown', handleKeyDown);
           });
         }
       });
@@ -92,16 +136,6 @@
       });
     });
   </script>
-</head>
-
-<body>
-  <header>
-    <h4>Web-Testground</h4>
-    <img src="digital.png" alt="Digital" style="height: 30px;">
-  </header>
-  <iframe id="mce_0_ifr"></iframe>
-  <div id="inputWrapper">
-    <button id="resetButton">RESET</button>
-  </div>
+  <script src="foreground.js"></script>
 </body>
 </html>
