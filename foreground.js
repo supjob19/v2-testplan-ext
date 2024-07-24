@@ -1,13 +1,27 @@
-console.log("DEBUG: URL MATCHED");
+console.log(getShortDateTime() + "\n" + "DEBUG: URL MATCHED");
 
 if (document.readyState !== 'loading') {
-    console.log("DEBUG: DOM already loaded");
+    console.log(getShortDateTime() + "\n" + "DEBUG: DOM already loaded");
     setupInputListener();
 } else {
     document.addEventListener('DOMContentLoaded', function () {
-        console.log('DEBUG: DOM was not loaded yet');
+        console.log(getShortDateTime() + "\n" + "DEBUG: DOM was not loaded yet");
         setupInputListener();
     });
+}
+
+function getShortDateTime() {
+  const now = new Date();
+  const timeOptions = {
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit',
+    hour12: false
+  };
+
+  const time = now.toLocaleTimeString('de-DE', timeOptions);
+
+  return `${time}`;
 }
 
 function setupInputListener() {

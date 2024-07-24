@@ -1,4 +1,18 @@
-console.log("DEBUG: BACKEND REACHED");
+console.log(getShortDateTime() + "\n" + "DEBUG: BACKEND REACHED");
+
+function getShortDateTime() {
+  const now = new Date();
+  const timeOptions = {
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit',
+    hour12: false
+  };
+
+  const time = now.toLocaleTimeString('de-DE', timeOptions);
+
+  return `${time}`;
+}
 
 chrome.runtime.onMessage.addListener(async (request, sender, sendResponse) => {
     if (request.type === 'TEXT_BOX_UPDATED') {
