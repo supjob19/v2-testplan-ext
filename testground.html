@@ -1,0 +1,35 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Autocomplete Test</title>
+  <style>
+    #inputWrapper {
+      margin: 20px;
+    }
+    #input {
+      width: 100%;
+      padding: 10px;
+      font-size: 16px;
+      border: 1px solid #ccc;
+      border-radius: 4px;
+    }
+    .autocomplete-item {
+      padding: 5px;
+      cursor: pointer;
+      background-color: #fff;
+      border: 1px solid #ccc;
+      margin-top: -1px; /* Prevent double borders */
+    }
+    .autocomplete-item:hover {
+      background-color: #ddd;
+    }
+  </style>
+</head>
+<body>
+  <div id="inputWrapper">
+    <input id="input" type="text" spellcheck="false" placeholder="Geben Sie Text ein...">
+  </div>
+</body>
+</html>
