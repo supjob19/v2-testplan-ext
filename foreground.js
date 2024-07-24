@@ -23,19 +23,26 @@ function setupInputListener() {
 let lastValidChar = "";
 let completions = [];
 let tooltip;
-let selectedIndex = 0; // Default to the first element
+let selectedIndex = 0;
+
+function getCurrentPosition(inputValue) {
+    const parts = inputValue.split(/[\s.:]+/);
+    return parts.length; 
+  }
 
 function handleInput(event) {
     const textBox = event.target;
     const inputValue = textBox.value;
+    
+    const position = getCurrentPosition(inputValue);
 
-    // Check if the last character is valid
+    // Check for last valid character
     let lastChar = "";
     if (inputValue.length > 0) {
         for (let i = inputValue.length - 1; i >= 0; i--) {
             const char = inputValue.charAt(i);
             if (char !== " " && char !== "") {
-                if (i === 0 || inputValue.charAt(i - 1) === " " || inputValue.charAt(i - 1) === ".") {
+                if (i === 0 || inputValue.charAt(i - 1) === " " || inputValue.charAt(i - 1) === "." || inputValue.charAt(i - 1) === ":") {
                     lastChar = char;
                     break;
                 }
@@ -46,15 +53,15 @@ function handleInput(event) {
     if (lastChar !== "" && lastChar !== " ") {
         lastValidChar = lastChar;
         console.log('Last valid character:', lastValidChar);
-        chrome.runtime.sendMessage({ type: 'TEXT_BOX_UPDATED', lastChar: lastValidChar });
+        chrome.runtime.sendMessage({ type: 'TEXT_BOX_UPDATED', lastChar: lastValidChar, position: position });
     } else {
         console.log('No valid last character to process.');
         hideCompletionPopup();
     }
 
     chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
-        if (request.type === 'COMPLETION_RECEIVED' && request.completion) {
-            completions = request.completion.split('\n');
+        if (request.type === 'COMPLETION_RECEIVED' && request.suggestions) {
+            completions = request.suggestions;
             const sortedCompletions = sortCompletions(completions, request.lastChar);
             showCompletionPopup(textBox, sortedCompletions);
         }
@@ -97,8 +104,8 @@ function selectCompletion() {
 
     const textBox = document.getElementById('input');
     const currentValue = textBox.value;
-    const selectedCompletion = completions[selectedIndex];
-    const lastWord = currentValue.split(/[\s.]+/).pop().toLowerCase();
+    const selectedCompletion = completions[selectedIndex].text;
+    const lastWord = currentValue.split(/[\s.:]+/).pop().toLowerCase();
     const selectedCompletionLowerCase = selectedCompletion.toLowerCase();
 
     if (selectedCompletionLowerCase.startsWith(lastWord)) {
@@ -113,8 +120,8 @@ function selectCompletion() {
 
 function sortCompletions(completions, lastChar) {
     return completions.sort((a, b) => {
-        const aStartsWith = a.toLowerCase().startsWith(lastChar.toLowerCase());
-        const bStartsWith = b.toLowerCase().startsWith(lastChar.toLowerCase());
+        const aStartsWith = a.text.toLowerCase().startsWith(lastChar.toLowerCase());
+        const bStartsWith = b.text.toLowerCase().startsWith(lastChar.toLowerCase());
         if (aStartsWith && !bStartsWith) return -1;
         if (!aStartsWith && bStartsWith) return 1;
         return 0;
@@ -132,7 +139,7 @@ function adjustTooltipWidth(tooltip, completions) {
     let maxWidth = 0;
 
     completions.forEach(completion => {
-        span.textContent = completion;
+        span.textContent = completion.text;
         const itemWidth = span.offsetWidth;
         if (itemWidth > maxWidth) {
             maxWidth = itemWidth;
@@ -141,8 +148,8 @@ function adjustTooltipWidth(tooltip, completions) {
 
     document.body.removeChild(span);
 
-    // Add some extra space to ensure the text doesn't overflow
-    tooltip.style.width = `${maxWidth + 20}px`;
+    // Extra space means no overflow
+    tooltip.style.width = `${maxWidth + 100}px`;
 }
 
 function showCompletionPopup(textBox, completions) {
@@ -156,25 +163,36 @@ function showCompletionPopup(textBox, completions) {
         document.body.appendChild(tooltip);
     }
     tooltip.innerHTML = '';
-    selectedIndex = 0; // Default to the first element whenever the suggestions are shown
+    selectedIndex = 0; // First element by default
 
     completions.forEach((completion, index) => {
         const item = document.createElement('div');
-        item.textContent = completion;
         item.classList.add('autocomplete-item');
         if (index === selectedIndex) {
             item.classList.add('highlight');
         }
+
+        const suggestionText = document.createElement('div');
+        suggestionText.textContent = completion.text;
+        suggestionText.classList.add('autocomplete-suggestion-text');
+
+        const suggestionDescription = document.createElement('div');
+        suggestionDescription.textContent = completion.description;
+        suggestionDescription.classList.add('autocomplete-suggestion-description');
+
+        item.appendChild(suggestionText);
+        item.appendChild(suggestionDescription);
+
         item.addEventListener('mousedown', (e) => {
             e.preventDefault();
             const currentValue = textBox.value;
-            const lastWord = currentValue.split(/[\s.]+/).pop().toLowerCase(); // Get the last word after a space or a dot, in lower case
-            const completionLowerCase = completion.toLowerCase();
+            const lastWord = currentValue.split(/[\s.:]+/).pop().toLowerCase(); // Get the last word after a space, dot, or colon in lower case
+            const completionLowerCase = completion.text.toLowerCase();
             if (completionLowerCase.startsWith(lastWord)) {
-                const remainingText = completion.slice(lastWord.length); // Only add the part that is not already typed
+                const remainingText = completion.text.slice(lastWord.length); // Only add the part that is not already typed
                 textBox.value += remainingText;
             } else {
-                textBox.value += completion; // Fallback: Add the whole completion if no match
+                textBox.value += completion.text; // Fallback: Add the whole completion if no match
             }
             hideCompletionPopup();
         });
@@ -235,11 +253,18 @@ style.innerHTML = `
         cursor: pointer;
         background-color: #fff;
         border: 1px solid #ccc;
-        margin-top: -1px; /* Prevent double borders */
-        font-family: Arial, sans-serif; /* Modern font */
+        margin-top: -1px;
+        font-family: Arial, sans-serif;
+    }
+    .autocomplete-suggestion-text {
+        font-weight: bold;
+    }
+    .autocomplete-suggestion-description {
+        font-size: 0.8em;
+        color: #666;
     }
     .autocomplete-item.highlight {
-        background-color: #f0f0f0; /* Light gray background for the selected item */
+        background-color: #f0f0f0;
     }
     .autocomplete-item:hover {
         background-color: #ddd;
