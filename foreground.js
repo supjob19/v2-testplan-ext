@@ -26,7 +26,7 @@ let tooltip;
 let selectedIndex = 0;
 
 function getCurrentPosition(inputValue) {
-    const parts = inputValue.split(/[\s.:]+/);
+    const parts = inputValue.split(/[\s.:()]+/);
     return parts.length; 
   }
 
