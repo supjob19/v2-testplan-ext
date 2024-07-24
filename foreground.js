@@ -25,12 +25,22 @@ function getShortDateTime() {
 }
 
 function setupInputListener() {
-    const textBox = document.getElementById('input');
-    if (textBox) {
-        textBox.addEventListener('input', handleInput);
-        textBox.addEventListener('keydown', handleKeyDown);
+  console.log("Setup Input Listener");
+    const iframe = document.getElementById('mce_0_ifr');
+    if (iframe) {
+        iframe.onload = function() {
+            const iframeDocument = iframe.contentDocument || iframe.contentWindow.document;
+            const editorBody = iframeDocument.getElementById('tinymce');
+            if (editorBody) {
+              console.log("Editor body found");
+                editorBody.addEventListener('input', handleInput);
+                editorBody.addEventListener('keydown', handleKeyDown);
+            } else {
+                console.log("Editor body not found");
+            }
+        };
     } else {
-        console.log("Textfield with this ID not found");
+        console.log("Iframe with this ID not found");
     }
 }
 
@@ -42,12 +52,12 @@ let selectedIndex = 0;
 function getCurrentPosition(inputValue) {
     const parts = inputValue.split(/[\s.:()]+/);
     return parts.length; 
-  }
+}
 
 function handleInput(event) {
-    const textBox = event.target;
-    const inputValue = textBox.value;
-    
+    const editorContent = tinymce.activeEditor.getContent({ format: 'text' });
+    const inputValue = editorContent;
+
     const position = getCurrentPosition(inputValue);
 
     // Check for last valid character
@@ -77,13 +87,14 @@ function handleInput(event) {
         if (request.type === 'COMPLETION_RECEIVED' && request.suggestions) {
             completions = request.suggestions;
             const sortedCompletions = sortCompletions(completions, request.lastChar);
-            showCompletionPopup(textBox, sortedCompletions);
+            showCompletionPopup(inputValue, sortedCompletions);
         }
     });
 }
 
 function handleKeyDown(event) {
-    const textBox = event.target;
+    const editorContent = tinymce.activeEditor.getContent({ format: 'text' });
+    const inputValue = editorContent;
     if (tooltip && tooltip.style.display === 'block') {
         if (event.key === 'ArrowDown') {
             event.preventDefault();
@@ -93,7 +104,7 @@ function handleKeyDown(event) {
             moveSelection(-1);
         } else if (event.key === 'Tab') {
             event.preventDefault();
-            selectCompletion();
+            selectCompletion(inputValue);
         }
     }
 }
@@ -113,20 +124,20 @@ function moveSelection(delta) {
     });
 }
 
-function selectCompletion() {
+function selectCompletion(inputValue) {
     if (selectedIndex < 0 || selectedIndex >= completions.length) return;
 
-    const textBox = document.getElementById('input');
-    const currentValue = textBox.value;
+    const editorContent = tinymce.activeEditor.getContent({ format: 'text' });
+    const currentValue = editorContent;
     const selectedCompletion = completions[selectedIndex].text;
     const lastWord = currentValue.split(/[\s.:]+/).pop().toLowerCase();
     const selectedCompletionLowerCase = selectedCompletion.toLowerCase();
 
     if (selectedCompletionLowerCase.startsWith(lastWord)) {
         const remainingText = selectedCompletion.slice(lastWord.length);
-        textBox.value += remainingText;
+        tinymce.activeEditor.setContent(currentValue + remainingText);
     } else {
-        textBox.value += selectedCompletion;
+        tinymce.activeEditor.setContent(currentValue + selectedCompletion);
     }
 
     hideCompletionPopup();
@@ -166,9 +177,9 @@ function adjustTooltipWidth(tooltip, completions) {
     tooltip.style.width = `${maxWidth + 100}px`;
 }
 
-function showCompletionPopup(textBox, completions) {
-    const cursorPosition = textBox.selectionStart;
-    const coords = getCaretCoordinates(textBox, cursorPosition);
+function showCompletionPopup(inputValue, completions) {
+    const cursorPosition = tinymce.activeEditor.selection.getRng().startOffset;
+    const coords = getCaretCoordinates(tinymce.activeEditor.getBody(), cursorPosition);
 
     tooltip = document.getElementById('autocomplete-tooltip');
     if (!tooltip) {
@@ -199,14 +210,14 @@ function showCompletionPopup(textBox, completions) {
 
         item.addEventListener('mousedown', (e) => {
             e.preventDefault();
-            const currentValue = textBox.value;
+            const currentValue = inputValue;
             const lastWord = currentValue.split(/[\s.:]+/).pop().toLowerCase(); // Get the last word after a space, dot, or colon in lower case
             const completionLowerCase = completion.text.toLowerCase();
             if (completionLowerCase.startsWith(lastWord)) {
                 const remainingText = completion.text.slice(lastWord.length); // Only add the part that is not already typed
-                textBox.value += remainingText;
+                tinymce.activeEditor.setContent(currentValue + remainingText);
             } else {
-                textBox.value += completion.text; // Fallback: Add the whole completion if no match
+                tinymce.activeEditor.setContent(currentValue + completion.text); // Fallback: Add the whole completion if no match
             }
             hideCompletionPopup();
         });
@@ -239,7 +250,7 @@ function getCaretCoordinates(element, position) {
         div.style[prop] = style[prop];
     });
 
-    const textContent = element.value.substr(0, position);
+    const textContent = element.innerText.substr(0, position);
     div.textContent = textContent;
 
     if (element.nodeName === 'INPUT') {
@@ -247,7 +258,7 @@ function getCaretCoordinates(element, position) {
     }
 
     const span = document.createElement('span');
-    span.textContent = element.value.substr(position) || '.';
+    span.textContent = element.innerText.substr(position) || '.';
     div.appendChild(span);
 
     document.body.appendChild(div);
