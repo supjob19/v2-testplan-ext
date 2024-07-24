@@ -3,7 +3,6 @@
     "name": "Testplan-Extension",
     "description": "Autovervollständigung von Befehlen für das Erstellen von Testplänen - v2",
     "version": "0.2.1",
-    "options_page": "settings/settings.html",
     "action": {
         "default_title": "Testplan-Autovervollständigung",
         "default_popup": "startmsg.html",
