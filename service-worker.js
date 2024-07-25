@@ -16,6 +16,7 @@ function getShortDateTime() {
 
 chrome.runtime.onMessage.addListener(async (request, sender, sendResponse) => {
     if (request.type === 'TEXT_BOX_UPDATED') {
+        console.log("DEBUG: Received - " +request.type)
         try {
             const response = await fetch('https://2192325f-d109-4481-8342-3a4189739f5b.mock.pstmn.io/completion', {
                 method: 'GET',
@@ -55,5 +56,5 @@ chrome.runtime.onMessage.addListener(async (request, sender, sendResponse) => {
             sendResponse({ status: 'error', message: error.message });
         }
     }
-    return true; // Indicate that sendResponse will be called asynchronously
+    return true;
 });
