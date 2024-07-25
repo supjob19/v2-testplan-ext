@@ -58,16 +58,6 @@
       margin-top: 20px;
     }
   </style>
-</head>
-<body>
-  <header>
-    <h4>Web-Testground</h4>
-    <img src="digital.png" alt="Digital" style="height: 30px;">
-  </header>
-  <iframe id="mce_0_ifr"></iframe>
-  <div id="inputWrapper">
-    <button id="resetButton">RESET</button>
-  </div>
   <script>
     document.addEventListener('DOMContentLoaded', function () {
       tinymce.init({
@@ -83,7 +73,7 @@
         ai_request: (request, respondWith) => respondWith.string(() => Promise.reject("See docs to implement AI Assistant")),
         setup: function (editor) {
           editor.on('init', function () {
-            console.log('Editor initialized.');
+            console.log('HTML: Editor initialized.');
           });
         }
       });
@@ -94,5 +84,15 @@
       });
     });
   </script>
+</head>
+<body>
+  <header>
+    <h4>Web-Testground</h4>
+    <img src="digital.png" alt="Digital" style="height: 30px;">
+  </header>
+  <iframe id="mce_0_ifr"></iframe>
+  <div id="inputWrapper">
+    <button id="resetButton">RESET</button>
+  </div>
 </body>
 </html>
