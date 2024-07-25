@@ -9,7 +9,7 @@
         "default_icon": "startimg.png"
     },
     "permissions": [
-        "activeTab", "storage", "scripting"
+        "activeTab", "storage", "scripting", "tabs"
     ],
     "host_permissions": [
         "*://*/*"

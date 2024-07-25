@@ -28,18 +28,18 @@ function waitForEditorInitialization() {
   const editorIframe = document.querySelector('iframe#mce_0_ifr');
 
   if (!editorIframe) {
-    console.log(getShortDateTime() + "\n" + "DEBUG: Waiting for editor to be initialized");
+    //console.log(getShortDateTime() + "\n" + "DEBUG: Waiting for editor to be initialized");
     setTimeout(waitForEditorInitialization, 100);
   } else {
-    console.log(getShortDateTime() + "\n" + "DEBUG: Editor found");
+    //console.log(getShortDateTime() + "\n" + "DEBUG: Editor found");
     
     // Check if iframe is already loaded
     if (editorIframe.contentDocument.readyState === 'complete') {
-      console.log(getShortDateTime() + "\n" + "DEBUG: Editor iframe already loaded");
+      //console.log(getShortDateTime() + "\n" + "DEBUG: Editor iframe already loaded");
       monitorEditorContent(editorIframe);
     } else {
       editorIframe.addEventListener('load', function() {
-        console.log(getShortDateTime() + "\n" + "DEBUG: Editor iframe load event fired");
+        //console.log(getShortDateTime() + "\n" + "DEBUG: Editor iframe load event fired");
         monitorEditorContent(editorIframe);
       });
     }
@@ -51,14 +51,14 @@ function monitorEditorContent(editorIframe) {
   const editorBody = iframeDocument.getElementById('tinymce');
 
   if (editorBody) {
-    console.log('DEBUG: Editor initialized:', editorBody.innerHTML);  // Log the initial HTML inside the TinyMCE editor
+    //console.log('DEBUG: Editor initialized:', editorBody.innerHTML);  // Log the initial HTML inside the TinyMCE editor
 
     // Set up an observer to watch for changes in the editor
     const observer = new MutationObserver(mutations => {
       mutations.forEach(mutation => {
         if (mutation.type === 'childList' || mutation.type === 'characterData') {
-          console.log('DEBUG: Mutation observed:', mutation);
-          handleInput();
+          //console.log('DEBUG: Mutation observed:', mutation);
+          //handleInput();
         }
       });
     });
@@ -95,11 +95,11 @@ function handleInput() {
   const editorContent = editorIframe.contentDocument.body.innerText;
   const inputValue = editorContent.trim();
 
-  console.log('DEBUG: Editor content:', editorContent);
-  console.log('DEBUG: Trimmed input value:', inputValue);
+  //console.log('DEBUG: Editor content:', editorContent);
+  //console.log('DEBUG: Trimmed input value:', inputValue);
 
   const position = getCurrentPosition(inputValue);
-  console.log('DEBUG: Current position:', position);
+  //console.log('DEBUG: Current position:', position);
 
   let lastChar = "";
   if (inputValue.length > 0) {
@@ -114,7 +114,7 @@ function handleInput() {
     }
   }
 
-  console.log('DEBUG: Last character found:', lastChar);
+  //console.log('DEBUG: Last character found:', lastChar);
 
   if (lastChar !== "" && lastChar !== " ") {
     lastValidChar = lastChar;

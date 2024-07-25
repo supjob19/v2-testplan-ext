@@ -18,7 +18,7 @@ chrome.runtime.onMessage.addListener(async (request, sender, sendResponse) => {
   if (request.type === 'TEXT_BOX_UPDATED') {
     console.log("DEBUG: Received - " + request.type);
     try {
-      const response = await fetch('https://2192325f-d109-4481-8342-3a4189739f5b.mock.pstmn.io/completion', {
+      const response = await fetch('http://localhost:3001/completion', {
         method: 'GET',
         headers: {
           'Content-Type': 'application/json'
@@ -46,6 +46,7 @@ chrome.runtime.onMessage.addListener(async (request, sender, sendResponse) => {
           suggestions: suggestions,
           lastChar: request.lastChar
         });
+        console.log("DEBUG: Sent - COMPLETION_RECEIVED");
         sendResponse({ status: 'success' });
       } else {
         console.error('Unexpected response format:', data);
