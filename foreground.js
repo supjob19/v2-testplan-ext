@@ -32,43 +32,52 @@ function waitForEditorInitialization() {
     setTimeout(waitForEditorInitialization, 100);
   } else {
     console.log(getShortDateTime() + "\n" + "DEBUG: Editor found");
-    monitorEditorContent(editorIframe);
+    
+    // Check if iframe is already loaded
+    if (editorIframe.contentDocument.readyState === 'complete') {
+      console.log(getShortDateTime() + "\n" + "DEBUG: Editor iframe already loaded");
+      monitorEditorContent(editorIframe);
+    } else {
+      editorIframe.addEventListener('load', function() {
+        console.log(getShortDateTime() + "\n" + "DEBUG: Editor iframe load event fired");
+        monitorEditorContent(editorIframe);
+      });
+    }
   }
 }
 
 function monitorEditorContent(editorIframe) {
-  editorIframe.addEventListener('load', function() {
-    const iframeDocument = editorIframe.contentDocument || editorIframe.contentWindow.document;
-    const editorBody = iframeDocument.getElementById('tinymce');
+  const iframeDocument = editorIframe.contentDocument || editorIframe.contentWindow.document;
+  const editorBody = iframeDocument.getElementById('tinymce');
 
-    if (editorBody) {
-      console.log('Editor initialized:', editorBody.innerHTML);  // Log the initial HTML inside the TinyMCE editor
+  if (editorBody) {
+    console.log('DEBUG: Editor initialized:', editorBody.innerHTML);  // Log the initial HTML inside the TinyMCE editor
 
-      // Set up an observer to watch for changes in the editor
-      const observer = new MutationObserver(mutations => {
-        mutations.forEach(mutation => {
-          if (mutation.type === 'childList' || mutation.type === 'characterData') {
-            handleInput();
-          }
-        });
+    // Set up an observer to watch for changes in the editor
+    const observer = new MutationObserver(mutations => {
+      mutations.forEach(mutation => {
+        if (mutation.type === 'childList' || mutation.type === 'characterData') {
+          console.log('DEBUG: Mutation observed:', mutation);
+          handleInput();
+        }
       });
+    });
 
-      observer.observe(editorBody, {
-        childList: true,
-        characterData: true,
-        subtree: true
-      });
+    observer.observe(editorBody, {
+      childList: true,
+      characterData: true,
+      subtree: true
+    });
 
-      // Additionally, listen for keydown events inside the TinyMCE editor
-      editorBody.addEventListener('input', handleInput);
-      editorBody.addEventListener('keydown', handleKeyDown);
+    // Additionally, listen for keydown events inside the TinyMCE editor
+    editorBody.addEventListener('input', handleInput);
+    editorBody.addEventListener('keydown', handleKeyDown);
 
-      console.log("DEBUG: Editor listeners and observer set up");
-    } else {
-      console.log('Editor body not found. Retrying...');
-      setTimeout(waitForEditorInitialization, 100);
-    }
-  });
+    console.log("DEBUG: Editor listeners and observer set up");
+  } else {
+    console.log('DEBUG: Editor body not found. Retrying...');
+    setTimeout(() => monitorEditorContent(editorIframe), 100);
+  }
 }
 
 let lastValidChar = "";
@@ -86,11 +95,11 @@ function handleInput() {
   const editorContent = editorIframe.contentDocument.body.innerText;
   const inputValue = editorContent.trim();
 
-  console.log('Editor content:', editorContent);
-  console.log('Trimmed input value:', inputValue);
+  console.log('DEBUG: Editor content:', editorContent);
+  console.log('DEBUG: Trimmed input value:', inputValue);
 
   const position = getCurrentPosition(inputValue);
-  console.log('Current position:', position);
+  console.log('DEBUG: Current position:', position);
 
   let lastChar = "";
   if (inputValue.length > 0) {
@@ -105,27 +114,27 @@ function handleInput() {
     }
   }
 
-  console.log('Last character found:', lastChar);
+  console.log('DEBUG: Last character found:', lastChar);
 
   if (lastChar !== "" && lastChar !== " ") {
     lastValidChar = lastChar;
-    console.log('Last valid character:', lastValidChar);
+    console.log('DEBUG: Last valid character:', lastValidChar);
 
     localStorage.setItem('lastValidChar', lastValidChar);
 
     if (chrome && chrome.runtime && chrome.runtime.sendMessage) {
       chrome.runtime.sendMessage({ type: 'TEXT_BOX_UPDATED', lastChar: lastValidChar, position: position }, response => {
         if (chrome.runtime.lastError) {
-          console.error(chrome.runtime.lastError.message);
+          console.error('DEBUG: ' + chrome.runtime.lastError.message);
         } else {
-          console.log("Message sent successfully");
+          console.log('DEBUG: Message sent successfully');
         }
       });
     } else {
-      console.log('Chrome runtime API is not available.');
+      console.log('DEBUG: Chrome runtime API is not available.');
     }
   } else {
-    console.log('No valid last character to process.');
+    console.log('DEBUG: No valid last character to process.');
     hideCompletionPopup();
   }
 }
