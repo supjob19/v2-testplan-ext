@@ -190,9 +190,6 @@ function selectCompletion(inputValue) {
 
   insertTextAtCursor(selectedCompletion);
   hideCompletionPopup();
-
-  // After inserting the text, show the tooltip again
-  showCompletionPopupAfterSelection();
 }
 
 function insertTextAtCursor(text) {
@@ -205,19 +202,6 @@ function insertTextAtCursor(text) {
   range.setEndAfter(node);
   selection.removeAllRanges();
   selection.addRange(range);
-}
-
-function showCompletionPopupAfterSelection() {
-  const editorIframe = document.querySelector('iframe#mce_0_ifr');
-  const editorContent = editorIframe.contentDocument.body.innerText;
-  const position = getCurrentPosition(editorContent);
-  chrome.runtime.sendMessage({ type: 'TEXT_BOX_UPDATED', lastChar: lastValidChar, position: position }, response => {
-    if (chrome.runtime.lastError) {
-      console.error('DEBUG: ' + chrome.runtime.lastError.message);
-    } else {
-      console.log('DEBUG: Message sent successfully');
-    }
-  });
 }
 
 function sortCompletions(completions, lastChar) {
@@ -254,6 +238,7 @@ function adjustTooltipWidth(tooltip, completions) {
 }
 
 function showCompletionPopup(inputValue, completions) {
+  const sortedCompletions = sortCompletions(completions, lastValidChar);
   const editorIframe = document.querySelector('iframe#mce_0_ifr');
   const iframeWindow = editorIframe.contentWindow;
   const selection = iframeWindow.getSelection();
@@ -262,8 +247,8 @@ function showCompletionPopup(inputValue, completions) {
   const iframeRect = editorIframe.getBoundingClientRect();
 
   const coords = {
-    top: iframeRect.top + rect.bottom,
-    left: iframeRect.left + rect.left
+    top: iframeRect.top + rect.bottom + window.scrollY,
+    left: iframeRect.left + rect.left + window.scrollX
   };
 
   tooltip = document.getElementById('autocomplete-tooltip');
@@ -275,7 +260,7 @@ function showCompletionPopup(inputValue, completions) {
   tooltip.innerHTML = '';
   selectedIndex = 0;
 
-  completions.forEach((completion, index) => {
+  sortedCompletions.forEach((completion, index) => {
     const item = document.createElement('div');
     item.classList.add('autocomplete-item');
     if (index === selectedIndex) {
@@ -301,7 +286,7 @@ function showCompletionPopup(inputValue, completions) {
     tooltip.appendChild(item);
   });
 
-  adjustTooltipWidth(tooltip, completions);
+  adjustTooltipWidth(tooltip, sortedCompletions);
 
   tooltip.style.left = `${coords.left}px`;
   tooltip.style.top = `${coords.top}px`;
@@ -358,6 +343,11 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     completions = message.suggestions;
     const editorIframe = document.querySelector('iframe#mce_0_ifr');
     const editorContent = editorIframe.contentDocument.body.innerText;
+    const position = getCurrentPosition(editorContent);
+    if (position > 4) {
+      console.log('DEBUG: Position higher than 4, no suggestions will be shown.');
+      return;
+    }
     showCompletionPopup(editorContent, completions);
     sendResponse({ status: 'received' });
   }
