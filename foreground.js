@@ -24,22 +24,20 @@ function getShortDateTime() {
   return `${time}`;
 }
 
+let isRequestInProgress = false;
+let inputTimeout;
+let suggestionUsed = false;
+
 function waitForEditorInitialization() {
   const editorIframe = document.querySelector('iframe#mce_0_ifr');
 
   if (!editorIframe) {
-    //console.log(getShortDateTime() + "\n" + "DEBUG: Waiting for editor to be initialized");
     setTimeout(waitForEditorInitialization, 100);
   } else {
-    //console.log(getShortDateTime() + "\n" + "DEBUG: Editor found");
-    
-    // Check if iframe is already loaded
     if (editorIframe.contentDocument.readyState === 'complete') {
-      //console.log(getShortDateTime() + "\n" + "DEBUG: Editor iframe already loaded");
       monitorEditorContent(editorIframe);
     } else {
       editorIframe.addEventListener('load', function() {
-        //console.log(getShortDateTime() + "\n" + "DEBUG: Editor iframe load event fired");
         monitorEditorContent(editorIframe);
       });
     }
@@ -51,14 +49,10 @@ function monitorEditorContent(editorIframe) {
   const editorBody = iframeDocument.getElementById('tinymce');
 
   if (editorBody) {
-    //console.log('DEBUG: Editor initialized:', editorBody.innerHTML);  // Log the initial HTML inside the TinyMCE editor
-
-    // Set up an observer to watch for changes in the editor
     const observer = new MutationObserver(mutations => {
       mutations.forEach(mutation => {
         if (mutation.type === 'childList' || mutation.type === 'characterData') {
-          //console.log('DEBUG: Mutation observed:', mutation);
-          //handleInput();
+          handleInput();
         }
       });
     });
@@ -69,8 +63,6 @@ function monitorEditorContent(editorIframe) {
       subtree: true
     });
 
-    // Additionally, listen for keydown events inside the TinyMCE editor
-    editorBody.addEventListener('input', handleInput);
     editorBody.addEventListener('keydown', handleKeyDown);
 
     console.log("DEBUG: Editor listeners and observer set up");
@@ -91,52 +83,57 @@ function getCurrentPosition(inputValue) {
 }
 
 function handleInput() {
-  const editorIframe = document.querySelector('iframe#mce_0_ifr');
-  const editorContent = editorIframe.contentDocument.body.innerText;
-  const inputValue = editorContent.trim();
+  clearTimeout(inputTimeout);
 
-  //console.log('DEBUG: Editor content:', editorContent);
-  //console.log('DEBUG: Trimmed input value:', inputValue);
+  inputTimeout = setTimeout(() => {
+    if (isRequestInProgress) return;
 
-  const position = getCurrentPosition(inputValue);
-  //console.log('DEBUG: Current position:', position);
+    const editorIframe = document.querySelector('iframe#mce_0_ifr');
+    const editorContent = editorIframe.contentDocument.body.innerText;
+    const inputValue = editorContent.trim();
 
-  let lastChar = "";
-  if (inputValue.length > 0) {
-    for (let i = inputValue.length - 1; i >= 0; i--) {
-      const char = inputValue.charAt(i);
-      if (char !== " " && char !== "") {
-        if (i === 0 || inputValue.charAt(i - 1) === " " || inputValue.charAt(i - 1) === "." || inputValue.charAt(i - 1) === ":") {
-          lastChar = char;
-          break;
+    const position = getCurrentPosition(inputValue);
+
+    let lastChar = "";
+    if (inputValue.length > 0) {
+      for (let i = inputValue.length - 1; i >= 0; i--) {
+        const char = inputValue.charAt(i);
+        if (char !== " " && char !== "") {
+          if (i === 0 || inputValue.charAt(i - 1) === " " || inputValue.charAt(i - 1) === "." || inputValue.charAt(i - 1) === ":") {
+            lastChar = char;
+            break;
+          }
         }
       }
     }
-  }
 
-  //console.log('DEBUG: Last character found:', lastChar);
+    if (lastChar !== "" && lastChar !== " " && lastChar !== "." && lastChar !== ":") {
+      if (!suggestionUsed) {
+        lastValidChar = lastChar;
+        console.log('DEBUG: Last valid character:', lastValidChar);
 
-  if (lastChar !== "" && lastChar !== " ") {
-    lastValidChar = lastChar;
-    console.log('DEBUG: Last valid character:', lastValidChar);
+        localStorage.setItem('lastValidChar', lastValidChar);
 
-    localStorage.setItem('lastValidChar', lastValidChar);
-
-    if (chrome && chrome.runtime && chrome.runtime.sendMessage) {
-      chrome.runtime.sendMessage({ type: 'TEXT_BOX_UPDATED', lastChar: lastValidChar, position: position }, response => {
-        if (chrome.runtime.lastError) {
-          console.error('DEBUG: ' + chrome.runtime.lastError.message);
+        if (chrome && chrome.runtime && chrome.runtime.sendMessage) {
+          isRequestInProgress = true;
+          chrome.runtime.sendMessage({ type: 'TEXT_BOX_UPDATED', lastChar: lastValidChar, position: position }, response => {
+            isRequestInProgress = false;
+            if (chrome.runtime.lastError) {
+              console.error('DEBUG: ' + chrome.runtime.lastError.message);
+            } else {
+              console.log('DEBUG: Message sent successfully');
+            }
+          });
         } else {
-          console.log('DEBUG: Message sent successfully');
+          console.log('DEBUG: Chrome runtime API is not available.');
         }
-      });
+      }
     } else {
-      console.log('DEBUG: Chrome runtime API is not available.');
+      suggestionUsed = false;
+      console.log('DEBUG: No valid last character to process.');
+      hideCompletionPopup();
     }
-  } else {
-    console.log('DEBUG: No valid last character to process.');
-    hideCompletionPopup();
-  }
+  }, 300); // 300ms Timeout, um schnelle wiederholte Eingaben abzufangen
 }
 
 function handleKeyDown(event) {
@@ -153,6 +150,10 @@ function handleKeyDown(event) {
       const editorContent = editorIframe.contentDocument.body.innerText;
       selectCompletion(editorContent);
     }
+  }
+  
+  if (event.key === ' ' || event.key === '.' || event.key === ':') {
+    suggestionUsed = false; // Reset suggestionUsed flag on space, dot, or colon
   }
 }
 
@@ -179,16 +180,44 @@ function selectCompletion(inputValue) {
   const lastWord = currentValue.split(/[\s.:]+/).pop().toLowerCase();
   const selectedCompletionLowerCase = selectedCompletion.toLowerCase();
 
-  if (selectedCompletionLowerCase.startsWith(lastWord)) {
-    const remainingText = selectedCompletion.slice(lastWord.length);
-    const editorIframe = document.querySelector('iframe#mce_0_ifr');
-    editorIframe.contentDocument.body.innerText = currentValue + remainingText;
-  } else {
-    const editorIframe = document.querySelector('iframe#mce_0_ifr');
-    editorIframe.contentDocument.body.innerText = currentValue + selectedCompletion;
-  }
+  suggestionUsed = true; // Mark suggestion as used
 
+  const editorIframe = document.querySelector('iframe#mce_0_ifr');
+  const selection = editorIframe.contentWindow.getSelection();
+  const range = selection.getRangeAt(0);
+  range.setStart(range.endContainer, range.endOffset - lastWord.length);
+  range.deleteContents();
+
+  insertTextAtCursor(selectedCompletion);
   hideCompletionPopup();
+
+  // After inserting the text, show the tooltip again
+  showCompletionPopupAfterSelection();
+}
+
+function insertTextAtCursor(text) {
+  const editorIframe = document.querySelector('iframe#mce_0_ifr');
+  const selection = editorIframe.contentWindow.getSelection();
+  const range = selection.getRangeAt(0);
+  const node = document.createTextNode(text);
+  range.insertNode(node);
+  range.setStartAfter(node);
+  range.setEndAfter(node);
+  selection.removeAllRanges();
+  selection.addRange(range);
+}
+
+function showCompletionPopupAfterSelection() {
+  const editorIframe = document.querySelector('iframe#mce_0_ifr');
+  const editorContent = editorIframe.contentDocument.body.innerText;
+  const position = getCurrentPosition(editorContent);
+  chrome.runtime.sendMessage({ type: 'TEXT_BOX_UPDATED', lastChar: lastValidChar, position: position }, response => {
+    if (chrome.runtime.lastError) {
+      console.error('DEBUG: ' + chrome.runtime.lastError.message);
+    } else {
+      console.log('DEBUG: Message sent successfully');
+    }
+  });
 }
 
 function sortCompletions(completions, lastChar) {
@@ -226,8 +255,16 @@ function adjustTooltipWidth(tooltip, completions) {
 
 function showCompletionPopup(inputValue, completions) {
   const editorIframe = document.querySelector('iframe#mce_0_ifr');
-  const cursorPosition = editorIframe.contentWindow.getSelection().getRangeAt(0).startOffset;
-  const coords = getCaretCoordinates(editorIframe.contentDocument.body, cursorPosition);
+  const iframeWindow = editorIframe.contentWindow;
+  const selection = iframeWindow.getSelection();
+  const range = selection.getRangeAt(0);
+  const rect = range.getBoundingClientRect();
+  const iframeRect = editorIframe.getBoundingClientRect();
+
+  const coords = {
+    top: iframeRect.top + rect.bottom,
+    left: iframeRect.left + rect.left
+  };
 
   tooltip = document.getElementById('autocomplete-tooltip');
   if (!tooltip) {
@@ -258,16 +295,8 @@ function showCompletionPopup(inputValue, completions) {
 
     item.addEventListener('mousedown', (e) => {
       e.preventDefault();
-      const currentValue = inputValue;
-      const lastWord = currentValue.split(/[\s.:]+/).pop().toLowerCase();
-      const completionLowerCase = completion.text.toLowerCase();
-      if (completionLowerCase.startsWith(lastWord)) {
-        const remainingText = completion.text.slice(lastWord.length);
-        editorIframe.contentDocument.body.innerText = currentValue + remainingText;
-      } else {
-        editorIframe.contentDocument.body.innerText = currentValue + completion.text;
-      }
-      hideCompletionPopup();
+      selectedIndex = index; // Set the selected index to the clicked item
+      selectCompletion(inputValue);
     });
     tooltip.appendChild(item);
   });
@@ -288,34 +317,6 @@ function hideCompletionPopup() {
   if (tooltip) {
     tooltip.style.display = 'none';
   }
-}
-
-function getCaretCoordinates(element, position) {
-  const div = document.createElement('div');
-  const style = getComputedStyle(element);
-  Array.from(style).forEach(prop => {
-    div.style[prop] = style[prop];
-  });
-
-  const textContent = element.innerText.substr(0, position);
-  div.textContent = textContent;
-
-  if (element.nodeName === 'INPUT') {
-    div.textContent = div.textContent.replace(/\s/g, '\u00a0');
-  }
-
-  const span = document.createElement('span');
-  span.textContent = element.innerText.substr(position) || '.';
-  div.appendChild(span);
-
-  document.body.appendChild(div);
-  const coordinates = span.getBoundingClientRect();
-  document.body.removeChild(div);
-
-  return {
-    top: coordinates.top + window.scrollY,
-    left: coordinates.left + window.scrollX
-  };
 }
 
 const style = document.createElement('style');
@@ -350,3 +351,14 @@ style.innerHTML = `
     }
 `;
 document.head.appendChild(style);
+
+chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
+  if (message.type === 'COMPLETION_RECEIVED') {
+    console.log('DEBUG: Completion received:', message.suggestions);
+    completions = message.suggestions;
+    const editorIframe = document.querySelector('iframe#mce_0_ifr');
+    const editorContent = editorIframe.contentDocument.body.innerText;
+    showCompletionPopup(editorContent, completions);
+    sendResponse({ status: 'received' });
+  }
+});
