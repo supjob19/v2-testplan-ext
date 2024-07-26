@@ -2,11 +2,11 @@ console.log(getShortDateTime() + "\n" + "DEBUG: URL MATCHED");
 
 if (document.readyState !== 'loading') {
   console.log(getShortDateTime() + "\n" + "DEBUG: DOM already loaded");
-  waitForEditorInitialization();
+  initializeEditorListeners();
 } else {
   document.addEventListener('DOMContentLoaded', function () {
     console.log(getShortDateTime() + "\n" + "DEBUG: DOM was not loaded yet");
-    waitForEditorInitialization();
+    initializeEditorListeners();
   });
 }
 
@@ -27,19 +27,48 @@ function getShortDateTime() {
 let isRequestInProgress = false;
 let inputTimeout;
 let suggestionUsed = false;
+let previousSuggestions = [];
+let activeEditorIframe = null;
 
-function waitForEditorInitialization() {
-  const editorIframe = document.querySelector('iframe#mce_0_ifr');
+function initializeEditorListeners() {
+  const iframes = document.querySelectorAll('iframe');
 
-  if (!editorIframe) {
-    setTimeout(waitForEditorInitialization, 100);
+  if (iframes.length === 0) {
+    setTimeout(initializeEditorListeners, 100);
   } else {
-    if (editorIframe.contentDocument.readyState === 'complete') {
-      monitorEditorContent(editorIframe);
-    } else {
-      editorIframe.addEventListener('load', function() {
-        monitorEditorContent(editorIframe);
-      });
+    iframes.forEach(iframe => {
+      if (iframe.contentDocument.readyState === 'complete') {
+        setupEditorFocusListener(iframe);
+      } else {
+        iframe.addEventListener('load', function() {
+          setupEditorFocusListener(iframe);
+        });
+      }
+    });
+  }
+}
+
+function setupEditorFocusListener(iframe) {
+  const iframeDocument = iframe.contentDocument || iframe.contentWindow.document;
+  const editorBody = iframeDocument.getElementById('tinymce');
+
+  if (editorBody) {
+    editorBody.addEventListener('focus', function() {
+      if (activeEditorIframe !== iframe) {
+        console.log('DEBUG: Editor focus changed.');
+        activeEditorIframe = iframe;
+        monitorEditorContent(iframe); // Attach event listeners to the new editor
+      }
+    });
+
+    editorBody.addEventListener('blur', function() {
+      hideCompletionPopup();
+    });
+
+    // Trigger focus manually if already focused (for initial load case)
+    if (document.activeElement === editorBody) {
+      activeEditorIframe = iframe;
+      monitorEditorContent(iframe);
     }
   }
 }
@@ -49,6 +78,10 @@ function monitorEditorContent(editorIframe) {
   const editorBody = iframeDocument.getElementById('tinymce');
 
   if (editorBody) {
+    // Remove existing observers and event listeners
+    const clone = editorBody.cloneNode(true);
+    editorBody.parentNode.replaceChild(clone, editorBody);
+
     const observer = new MutationObserver(mutations => {
       mutations.forEach(mutation => {
         if (mutation.type === 'childList' || mutation.type === 'characterData') {
@@ -57,13 +90,13 @@ function monitorEditorContent(editorIframe) {
       });
     });
 
-    observer.observe(editorBody, {
+    observer.observe(clone, {
       childList: true,
       characterData: true,
       subtree: true
     });
 
-    editorBody.addEventListener('keydown', handleKeyDown);
+    clone.addEventListener('keydown', handleKeyDown);
 
     console.log("DEBUG: Editor listeners and observer set up");
   } else {
@@ -86,10 +119,9 @@ function handleInput() {
   clearTimeout(inputTimeout);
 
   inputTimeout = setTimeout(() => {
-    if (isRequestInProgress) return;
+    if (isRequestInProgress || !activeEditorIframe) return;
 
-    const editorIframe = document.querySelector('iframe#mce_0_ifr');
-    const editorContent = editorIframe.contentDocument.body.innerText;
+    const editorContent = activeEditorIframe.contentDocument.body.innerText;
     const inputValue = editorContent.trim();
 
     const position = getCurrentPosition(inputValue);
@@ -116,7 +148,8 @@ function handleInput() {
 
         if (chrome && chrome.runtime && chrome.runtime.sendMessage) {
           isRequestInProgress = true;
-          chrome.runtime.sendMessage({ type: 'TEXT_BOX_UPDATED', lastChar: lastValidChar, position: position }, response => {
+          previousSuggestions = editorContent.split(/[\s.:()]+/);
+          chrome.runtime.sendMessage({ type: 'TEXT_BOX_UPDATED', lastChar: lastValidChar, position: position, previousSuggestions: previousSuggestions }, response => {
             isRequestInProgress = false;
             if (chrome.runtime.lastError) {
               console.error('DEBUG: ' + chrome.runtime.lastError.message);
@@ -146,8 +179,7 @@ function handleKeyDown(event) {
       moveSelection(-1);
     } else if (event.key === 'Tab') {
       event.preventDefault();
-      const editorIframe = document.querySelector('iframe#mce_0_ifr');
-      const editorContent = editorIframe.contentDocument.body.innerText;
+      const editorContent = activeEditorIframe.contentDocument.body.innerText;
       selectCompletion(editorContent);
     }
   }
@@ -182,19 +214,25 @@ function selectCompletion(inputValue) {
 
   suggestionUsed = true; // Mark suggestion as used
 
-  const editorIframe = document.querySelector('iframe#mce_0_ifr');
-  const selection = editorIframe.contentWindow.getSelection();
+  const selection = activeEditorIframe.contentWindow.getSelection();
   const range = selection.getRangeAt(0);
   range.setStart(range.endContainer, range.endOffset - lastWord.length);
   range.deleteContents();
 
   insertTextAtCursor(selectedCompletion);
   hideCompletionPopup();
+
+  const currentPosition = getCurrentPosition(currentValue);
+  if (selectedCompletion === "CAS" && currentPosition === 4) {
+    console.log("DEBUG: CAS selected at position 4.");
+  } else if (currentPosition <= 4) {
+    console.log("DEBUG: Position <= 4, not showing additional suggestions.");
+    hideCompletionPopup();
+  }
 }
 
 function insertTextAtCursor(text) {
-  const editorIframe = document.querySelector('iframe#mce_0_ifr');
-  const selection = editorIframe.contentWindow.getSelection();
+  const selection = activeEditorIframe.contentWindow.getSelection();
   const range = selection.getRangeAt(0);
   const node = document.createTextNode(text);
   range.insertNode(node);
@@ -202,6 +240,21 @@ function insertTextAtCursor(text) {
   range.setEndAfter(node);
   selection.removeAllRanges();
   selection.addRange(range);
+}
+
+function showAdditionalSuggestions() {
+  const position = 5;
+  const editorContent = activeEditorIframe.contentDocument.body.innerText;
+  previousSuggestions = editorContent.split(/[\s.:()]+/);
+  if (chrome && chrome.runtime && chrome.runtime.sendMessage) {
+    chrome.runtime.sendMessage({ type: 'TEXT_BOX_UPDATED', lastChar: lastValidChar, position: position, previousSuggestions: previousSuggestions }, response => {
+      if (chrome.runtime.lastError) {
+        console.error('DEBUG: ' + chrome.runtime.lastError.message);
+      } else {
+        console.log('DEBUG: Additional suggestions message sent successfully');
+      }
+    });
+  }
 }
 
 function sortCompletions(completions, lastChar) {
@@ -238,13 +291,11 @@ function adjustTooltipWidth(tooltip, completions) {
 }
 
 function showCompletionPopup(inputValue, completions) {
-  const sortedCompletions = sortCompletions(completions, lastValidChar);
-  const editorIframe = document.querySelector('iframe#mce_0_ifr');
-  const iframeWindow = editorIframe.contentWindow;
+  const iframeWindow = activeEditorIframe.contentWindow;
   const selection = iframeWindow.getSelection();
   const range = selection.getRangeAt(0);
   const rect = range.getBoundingClientRect();
-  const iframeRect = editorIframe.getBoundingClientRect();
+  const iframeRect = activeEditorIframe.getBoundingClientRect();
 
   const coords = {
     top: iframeRect.top + rect.bottom + window.scrollY,
@@ -260,7 +311,7 @@ function showCompletionPopup(inputValue, completions) {
   tooltip.innerHTML = '';
   selectedIndex = 0;
 
-  sortedCompletions.forEach((completion, index) => {
+  completions.forEach((completion, index) => {
     const item = document.createElement('div');
     item.classList.add('autocomplete-item');
     if (index === selectedIndex) {
@@ -286,7 +337,7 @@ function showCompletionPopup(inputValue, completions) {
     tooltip.appendChild(item);
   });
 
-  adjustTooltipWidth(tooltip, sortedCompletions);
+  adjustTooltipWidth(tooltip, completions);
 
   tooltip.style.left = `${coords.left}px`;
   tooltip.style.top = `${coords.top}px`;
@@ -341,13 +392,13 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   if (message.type === 'COMPLETION_RECEIVED') {
     console.log('DEBUG: Completion received:', message.suggestions);
     completions = message.suggestions;
-    const editorIframe = document.querySelector('iframe#mce_0_ifr');
-    const editorContent = editorIframe.contentDocument.body.innerText;
+    const editorContent = activeEditorIframe.contentDocument.body.innerText;
     const position = getCurrentPosition(editorContent);
-    if (position > 4) {
-      console.log('DEBUG: Position higher than 4, no suggestions will be shown.');
+    if (position > 5 || (position === 5 && previousSuggestions[3] !== "CAS")) {
+      console.log('DEBUG: Position higher than 5 or previous suggestion not CAS, no suggestions will be shown.');
       return;
     }
+    completions = sortCompletions(completions, localStorage.getItem('lastValidChar') || '');
     showCompletionPopup(editorContent, completions);
     sendResponse({ status: 'received' });
   }

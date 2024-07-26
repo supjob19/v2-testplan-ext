@@ -36,9 +36,11 @@ chrome.runtime.onMessage.addListener(async (request, sender, sendResponse) => {
       const data = await response.json();
 
       const position = request.position;
-      if (position > 4) {
-        console.log('DEBUG: Position higher than 4, no suggestions will be shown.');
-        sendResponse({ status: 'success', message: 'Position higher than 4, no suggestions will be shown.' });
+      const previousSuggestions = request.previousSuggestions;
+
+      if (position > 5 || (position === 5 && previousSuggestions[3] !== "CAS")) {
+        console.log('DEBUG: Position higher than 5 or previous suggestion not CAS, no suggestions will be shown.');
+        sendResponse({ status: 'success', message: 'Position higher than 5 or previous suggestion not CAS, no suggestions will be shown.' });
         return;
       }
 
