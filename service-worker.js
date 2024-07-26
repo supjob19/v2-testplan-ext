@@ -9,6 +9,7 @@ function getShortDateTime() {
     hour12: false
   };
 
+
   const time = now.toLocaleTimeString('de-DE', timeOptions);
 
   return `${time}`;
