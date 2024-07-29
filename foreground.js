@@ -36,7 +36,7 @@ function initializeEditorListeners() {
   // Check for iframes every 500 milliseconds
   setInterval(() => {
     const iframes = document.querySelectorAll('iframe');
-    console.log('DEBUG: Number of iframes found:', iframes.length);  // Anzahl der iframes protokollieren
+    //console.log('DEBUG: Number of iframes found:', iframes.length);  // Anzahl der iframes protokollieren
 
     iframes.forEach(iframe => {
       if (!iframe._hasFocusListener) {
@@ -137,17 +137,18 @@ function handleInput() {
   inputTimeout = setTimeout(() => {
     if (isRequestInProgress || !activeEditorIframe) return;
 
-    const editorContent = activeEditorIframe.contentDocument.body.innerText;
-    const inputValue = editorContent.trim();
+    const editorContent = activeEditorIframe.contentDocument.body.innerText.trim();
+    const lines = editorContent.split('\n');
+    const currentLine = lines[lines.length - 1]; // Process only the current line
 
-    const position = getCurrentPosition(inputValue);
+    const position = getCurrentPosition(currentLine);
 
     let lastChar = "";
-    if (inputValue.length > 0) {
-      for (let i = inputValue.length - 1; i >= 0; i--) {
-        const char = inputValue.charAt(i);
+    if (currentLine.length > 0) {
+      for (let i = currentLine.length - 1; i >= 0; i--) {
+        const char = currentLine.charAt(i);
         if (char !== " " && char !== "") {
-          if (i === 0 || inputValue.charAt(i - 1) === " " || inputValue.charAt(i - 1) === "." || inputValue.charAt(i - 1) === ":") {
+          if (i === 0 || currentLine.charAt(i - 1) === " " || currentLine.charAt(i - 1) === "." || currentLine.charAt(i - 1) === ":") {
             lastChar = char;
             break;
           }
@@ -158,13 +159,13 @@ function handleInput() {
     if (lastChar !== "" && lastChar !== " " && lastChar !== "." && lastChar !== ":") {
       if (!suggestionUsed) {
         lastValidChar = lastChar;
-        console.log('DEBUG: Last valid character:', lastValidChar);
+        //console.log('DEBUG: Last valid character:', lastValidChar);
 
         localStorage.setItem('lastValidChar', lastValidChar);
 
         if (chrome && chrome.runtime && chrome.runtime.sendMessage) {
           isRequestInProgress = true;
-          previousSuggestions = editorContent.split(/[\s.:()]+/);
+          previousSuggestions = currentLine.split(/[\s.:()]+/);
           chrome.runtime.sendMessage({ type: 'TEXT_BOX_UPDATED', lastChar: lastValidChar, position: position, previousSuggestions: previousSuggestions }, response => {
             isRequestInProgress = false;
             if (chrome.runtime.lastError) {
@@ -179,7 +180,7 @@ function handleInput() {
       }
     } else {
       suggestionUsed = false;
-      console.log('DEBUG: No valid last character to process.');
+      //console.log('DEBUG: No valid last character to process.');
       hideCompletionPopup();
     }
   }, 300); // 300ms Timeout, um schnelle wiederholte Eingaben abzufangen
@@ -195,8 +196,10 @@ function handleKeyDown(event) {
       moveSelection(-1);
     } else if (event.key === 'Tab') {
       event.preventDefault();
-      const editorContent = activeEditorIframe.contentDocument.body.innerText;
-      selectCompletion(editorContent);
+      const editorContent = activeEditorIframe.contentDocument.body.innerText.trim();
+      const lines = editorContent.split('\n');
+      const currentLine = lines[lines.length - 1];
+      selectCompletion(currentLine);
     }
   }
   
@@ -260,8 +263,10 @@ function insertTextAtCursor(text) {
 
 function showAdditionalSuggestions() {
   const position = 5;
-  const editorContent = activeEditorIframe.contentDocument.body.innerText;
-  previousSuggestions = editorContent.split(/[\s.:()]+/);
+  const editorContent = activeEditorIframe.contentDocument.body.innerText.trim();
+  const lines = editorContent.split('\n');
+  const currentLine = lines[lines.length - 1];
+  previousSuggestions = currentLine.split(/[\s.:()]+/);
   if (chrome && chrome.runtime && chrome.runtime.sendMessage) {
     chrome.runtime.sendMessage({ type: 'TEXT_BOX_UPDATED', lastChar: lastValidChar, position: position, previousSuggestions: previousSuggestions }, response => {
       if (chrome.runtime.lastError) {
@@ -406,16 +411,18 @@ document.head.appendChild(style);
 
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   if (message.type === 'COMPLETION_RECEIVED') {
-    console.log('DEBUG: Completion received:', message.suggestions);
+    //console.log('DEBUG: Completion received:', message.suggestions);
     completions = message.suggestions;
-    const editorContent = activeEditorIframe.contentDocument.body.innerText;
-    const position = getCurrentPosition(editorContent);
+    const editorContent = activeEditorIframe.contentDocument.body.innerText.trim();
+    const lines = editorContent.split('\n');
+    const currentLine = lines[lines.length - 1];
+    const position = getCurrentPosition(currentLine);
     if (position > 5 || (position === 5 && previousSuggestions[3] !== "CAS")) {
       console.log('DEBUG: Position higher than 5 oder previous suggestion not CAS, no suggestions will be shown.');
       return;
     }
     completions = sortCompletions(completions, localStorage.getItem('lastValidChar') || '');
-    showCompletionPopup(editorContent, completions);
+    showCompletionPopup(currentLine, completions);
     sendResponse({ status: 'received' });
   }
 });
