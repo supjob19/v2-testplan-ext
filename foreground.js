@@ -29,59 +29,65 @@ let inputTimeout;
 let suggestionUsed = false;
 let previousSuggestions = [];
 let activeEditorIframe = null;
+let activeObserver = null;
 
 function initializeEditorListeners() {
-  const iframes = document.querySelectorAll('iframe');
+  // Check for iframes every 500 milliseconds
+  setInterval(() => {
+    const iframes = document.querySelectorAll('iframe');
+    //console.log('DEBUG: Number of iframes found:', iframes.length);  // Anzahl der iframes protokollieren
 
-  if (iframes.length === 0) {
-    setTimeout(initializeEditorListeners, 100);
-  } else {
     iframes.forEach(iframe => {
-      if (iframe.contentDocument.readyState === 'complete') {
+      if (!iframe._hasFocusListener) {
         setupEditorFocusListener(iframe);
-      } else {
-        iframe.addEventListener('load', function() {
-          setupEditorFocusListener(iframe);
-        });
+        iframe._hasFocusListener = true;  // Mark the iframe as having a focus listener
       }
     });
-  }
+  }, 100);
 }
 
 function setupEditorFocusListener(iframe) {
   const iframeDocument = iframe.contentDocument || iframe.contentWindow.document;
-  const editorBody = iframeDocument.getElementById('tinymce');
 
-  if (editorBody) {
-    editorBody.addEventListener('focus', function() {
+  iframeDocument.addEventListener('focusin', function (event) {
+    const editorBody = event.target.closest('#tinymce');
+    if (editorBody) {
       if (activeEditorIframe !== iframe) {
         console.log('DEBUG: Editor focus changed.');
         activeEditorIframe = iframe;
         monitorEditorContent(iframe); // Attach event listeners to the new editor
       }
-    });
-
-    editorBody.addEventListener('blur', function() {
-      hideCompletionPopup();
-    });
-
-    // Trigger focus manually if already focused (for initial load case)
-    if (document.activeElement === editorBody) {
-      activeEditorIframe = iframe;
-      monitorEditorContent(iframe);
     }
+  });
+
+  iframeDocument.addEventListener('click', function (event) {
+    const editorBody = event.target.closest('#tinymce');
+    if (editorBody) {
+      if (activeEditorIframe !== iframe) {
+        console.log('DEBUG: Editor clicked and focus changed.');
+        activeEditorIframe = iframe;
+        monitorEditorContent(iframe); // Attach event listeners to the new editor
+      }
+    }
+  });
+
+  // Check if the current focused element is an editor body on initial load
+  const activeElement = iframeDocument.activeElement;
+  if (activeElement && activeElement.closest('#tinymce')) {
+    activeEditorIframe = iframe;
+    monitorEditorContent(iframe);
   }
 }
 
 function monitorEditorContent(editorIframe) {
+  if (activeObserver) {
+    activeObserver.disconnect(); // Disconnect the previous observer
+  }
+
   const iframeDocument = editorIframe.contentDocument || editorIframe.contentWindow.document;
   const editorBody = iframeDocument.getElementById('tinymce');
 
   if (editorBody) {
-    // Remove existing observers and event listeners
-    const clone = editorBody.cloneNode(true);
-    editorBody.parentNode.replaceChild(clone, editorBody);
-
     const observer = new MutationObserver(mutations => {
       mutations.forEach(mutation => {
         if (mutation.type === 'childList' || mutation.type === 'characterData') {
@@ -90,13 +96,15 @@ function monitorEditorContent(editorIframe) {
       });
     });
 
-    observer.observe(clone, {
+    observer.observe(editorBody, {
       childList: true,
       characterData: true,
       subtree: true
     });
 
-    clone.addEventListener('keydown', handleKeyDown);
+    activeObserver = observer; // Set the new observer as active
+
+    editorBody.addEventListener('keydown', handleKeyDown);
 
     console.log("DEBUG: Editor listeners and observer set up");
   } else {
@@ -395,7 +403,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     const editorContent = activeEditorIframe.contentDocument.body.innerText;
     const position = getCurrentPosition(editorContent);
     if (position > 5 || (position === 5 && previousSuggestions[3] !== "CAS")) {
-      console.log('DEBUG: Position higher than 5 or previous suggestion not CAS, no suggestions will be shown.');
+      console.log('DEBUG: Position higher than 5 oder previous suggestion not CAS, no suggestions will be shown.');
       return;
     }
     completions = sortCompletions(completions, localStorage.getItem('lastValidChar') || '');
