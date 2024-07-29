@@ -30,12 +30,13 @@ let suggestionUsed = false;
 let previousSuggestions = [];
 let activeEditorIframe = null;
 let activeObserver = null;
+let tooltip = null;
 
 function initializeEditorListeners() {
   // Check for iframes every 500 milliseconds
   setInterval(() => {
     const iframes = document.querySelectorAll('iframe');
-    //console.log('DEBUG: Number of iframes found:', iframes.length);  // Anzahl der iframes protokollieren
+    console.log('DEBUG: Number of iframes found:', iframes.length);  // Anzahl der iframes protokollieren
 
     iframes.forEach(iframe => {
       if (!iframe._hasFocusListener) {
@@ -43,7 +44,14 @@ function initializeEditorListeners() {
         iframe._hasFocusListener = true;  // Mark the iframe as having a focus listener
       }
     });
-  }, 100);
+  }, 500);
+  
+  // Add click listener to document to hide tooltip when clicking outside
+  document.addEventListener('click', function (event) {
+    if (tooltip && tooltip.style.display === 'block' && !tooltip.contains(event.target)) {
+      hideCompletionPopup();
+    }
+  });
 }
 
 function setupEditorFocusListener(iframe) {
@@ -69,6 +77,7 @@ function setupEditorFocusListener(iframe) {
         monitorEditorContent(iframe); // Attach event listeners to the new editor
       }
     }
+    hideCompletionPopup(); // Hide tooltip when clicking inside the editor
   });
 
   // Check if the current focused element is an editor body on initial load
@@ -115,7 +124,6 @@ function monitorEditorContent(editorIframe) {
 
 let lastValidChar = "";
 let completions = [];
-let tooltip;
 let selectedIndex = 0;
 
 function getCurrentPosition(inputValue) {
