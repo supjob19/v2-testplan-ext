@@ -243,9 +243,9 @@ function selectCompletion(inputValue) {
 
   const currentPosition = getCurrentPosition(currentValue);
   if (selectedCompletion === "CAS" && currentPosition === 4) {
-    console.log("DEBUG: CAS selected at position 4.");
+    //console.log("DEBUG: CAS selected at position 4.");
   } else if (currentPosition <= 4) {
-    console.log("DEBUG: Position <= 4, not showing additional suggestions.");
+    //console.log("DEBUG: Position <= 4, not showing additional suggestions.");
     hideCompletionPopup();
   }
 }
@@ -418,7 +418,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     const currentLine = lines[lines.length - 1];
     const position = getCurrentPosition(currentLine);
     if (position > 5 || (position === 5 && previousSuggestions[3] !== "CAS")) {
-      console.log('DEBUG: Position higher than 5 oder previous suggestion not CAS, no suggestions will be shown.');
+      //console.log('DEBUG: Position higher than 5 oder previous suggestion not CAS, no suggestions will be shown.');
       return;
     }
     completions = sortCompletions(completions, localStorage.getItem('lastValidChar') || '');
