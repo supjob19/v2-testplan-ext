@@ -15,7 +15,7 @@ function getShortDateTime() {
 }
 
 chrome.runtime.onMessage.addListener(async (request, sender, sendResponse) => {
-  if (request.type === 'TEXT_BOX_UPDATED') {
+  if (request.type === 'FETCH_SUGGESTIONS') {
     console.log("DEBUG: Received - " + request.type);
     try {
       const response = await fetch('http://localhost:3001/completion', {
@@ -35,31 +35,19 @@ chrome.runtime.onMessage.addListener(async (request, sender, sendResponse) => {
 
       const data = await response.json();
 
-      const position = request.position;
-      const previousSuggestions = request.previousSuggestions;
-
-      if (position > 5 || (position === 5 && previousSuggestions[3] !== "CAS")) {
-        //console.log('DEBUG: Position higher than 5 or previous suggestion not CAS, no suggestions will be shown.');
-        sendResponse({ status: 'success', message: 'Position higher than 5 or previous suggestion not CAS, no suggestions will be shown.' });
-        return;
-      }
-
-      if (data.positions && data.positions[position]) {
-        const suggestions = data.positions[position].suggestions.map((suggestion, index) => ({
+      const suggestions = {};
+      for (const position in data.positions) {
+        suggestions[position] = data.positions[position].suggestions.map((suggestion, index) => ({
           text: suggestion,
           description: data.positions[position].descriptions[index]
         }));
-        chrome.tabs.sendMessage(sender.tab.id, {
-          type: 'COMPLETION_RECEIVED',
-          suggestions: suggestions,
-          lastChar: request.lastChar
-        });
-        console.log("DEBUG: Sent - COMPLETION_RECEIVED");
-        sendResponse({ status: 'success' });
-      } else {
-        console.error('Unexpected response format:', data);
-        sendResponse({ status: 'error', message: 'Unexpected response format' });
       }
+
+      chrome.tabs.sendMessage(sender.tab.id, {
+        type: 'COMPLETION_RECEIVED',
+        suggestions: suggestions,
+        lastChar: request.lastChar
+      });
     } catch (error) {
       console.error('Error during fetch:', error);
       sendResponse({ status: 'error', message: error.message });

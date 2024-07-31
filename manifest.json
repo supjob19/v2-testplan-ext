@@ -15,7 +15,7 @@
         "*://*/*"
     ],
     "externally_connectable": {
-        "matches": ["<all_urls>"]
+        "matches": ["https://tiejira.eil.risnet.de/"]
     },
     "background": {
         "service_worker": "service-worker.js"
