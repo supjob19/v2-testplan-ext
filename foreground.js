@@ -168,12 +168,15 @@ function isValidCommand(inputValue) {
 function handleInput() {
   clearTimeout(inputTimeout);
 
- 
   inputTimeout = setTimeout(() => {
     if (!activeEditorIframe) return;
 
     const editorContent = activeEditorIframe.contentDocument.body.innerText.trim();
     const inputValue = editorContent.split('\n').pop().trim();
+
+    // Überprüfen Sie das Vorhandensein von Klammern
+    const openParenthesesCount = (inputValue.match(/\(/g) || []).length;
+    const closeParenthesesCount = (inputValue.match(/\)/g) || []).length;
 
     // Ignorieren Sie alles innerhalb der Klammern am Ende
     const cleanedInput = inputValue.replace(/\(.*?\)$/, '');
@@ -193,13 +196,15 @@ function handleInput() {
       }
     }
 
-    if (!isValidCommand(cleanedInput)) {
+    const inputParts = cleanedInput.split(/[\s.:]+/);
+
+    if (!isValidCommand(inputValue) || openParenthesesCount !== closeParenthesesCount) {
       showWarningMessage();
     } else {
       hideWarningMessage();
     }
 
-    const inputParts = cleanedInput.split(/[\s.:]+/);
+    console.log(`DEBUG: Position: ${position}, Input Parts: ${inputParts}, Last Char: ${lastChar}`);
 
     if (position >= 5 && inputParts[3] !== "CAS") {
       hideCompletionPopup();
@@ -215,6 +220,8 @@ function handleInput() {
 
         relevantSuggestions = sortCompletions(relevantSuggestions, lastValidChar);
 
+        console.log(`DEBUG: Showing suggestions for position ${position}:`, relevantSuggestions);
+
         if (relevantSuggestions.length > 0) {
           showCompletionPopup(inputValue, relevantSuggestions);
         } else {
@@ -227,6 +234,7 @@ function handleInput() {
     }
   }, 300);
 }
+
 
 function handleKeyDown(event) {
   if (tooltip && tooltip.style.display === 'block') {
