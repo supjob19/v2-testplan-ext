@@ -3,10 +3,12 @@ console.log(getShortDateTime() + "\n" + "DEBUG: URL MATCHED");
 if (document.readyState !== 'loading') {
   console.log(getShortDateTime() + "\n" + "DEBUG: DOM already loaded");
   initializeEditorListeners();
+  fetchSuggestions();
 } else {
   document.addEventListener('DOMContentLoaded', function () {
     console.log(getShortDateTime() + "\n" + "DEBUG: DOM was not loaded yet");
     initializeEditorListeners();
+    fetchSuggestions();
   });
 }
 
@@ -30,20 +32,56 @@ let suggestionUsed = false;
 let previousSuggestions = [];
 let activeEditorIframe = null;
 let activeObserver = null;
+let warningMessage = null;
+let completions = {};
+let tooltip;
+let selectedIndex = 0;
+let validSuggestionsSet = new Set();
+
+chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
+  if (message.type === 'COMPLETION_RECEIVED') {
+    completions = message.suggestions;
+    updateValidSuggestionsSet();
+    console.log('DEBUG: Suggestions received and stored.', completions);
+  }
+});
+
+function fetchSuggestions() {
+  chrome.runtime.sendMessage({ type: 'FETCH_SUGGESTIONS' }, response => {
+    if (response && response.status === 'success') {
+      completions = response.suggestions;
+      updateValidSuggestionsSet();
+    } else {
+      console.error('Error fetching suggestions:', response ? response.message : 'No response');
+    }
+  });
+}
+
+function updateValidSuggestionsSet() {
+  validSuggestionsSet.clear();
+  for (const position in completions) {
+    completions[position].forEach(completion => {
+      validSuggestionsSet.add(completion.text);
+    });
+  }
+}
 
 function initializeEditorListeners() {
-  // Check for iframes every 500 milliseconds
   setInterval(() => {
     const iframes = document.querySelectorAll('iframe');
-    //console.log('DEBUG: Number of iframes found:', iframes.length);  // Anzahl der iframes protokollieren
-
     iframes.forEach(iframe => {
       if (!iframe._hasFocusListener) {
         setupEditorFocusListener(iframe);
-        iframe._hasFocusListener = true;  // Mark the iframe as having a focus listener
+        iframe._hasFocusListener = true;
       }
     });
   }, 100);
+
+  document.addEventListener('click', function (event) {
+    if (tooltip && tooltip.style.display === 'block' && !tooltip.contains(event.target)) {
+      hideCompletionPopup();
+    }
+  });
 }
 
 function setupEditorFocusListener(iframe) {
@@ -55,7 +93,7 @@ function setupEditorFocusListener(iframe) {
       if (activeEditorIframe !== iframe) {
         console.log('DEBUG: Editor focus changed.');
         activeEditorIframe = iframe;
-        monitorEditorContent(iframe); // Attach event listeners to the new editor
+        monitorEditorContent(iframe);
       }
     }
   });
@@ -66,12 +104,11 @@ function setupEditorFocusListener(iframe) {
       if (activeEditorIframe !== iframe) {
         console.log('DEBUG: Editor clicked and focus changed.');
         activeEditorIframe = iframe;
-        monitorEditorContent(iframe); // Attach event listeners to the new editor
+        monitorEditorContent(iframe);
       }
     }
   });
 
-  // Check if the current focused element is an editor body on initial load
   const activeElement = iframeDocument.activeElement;
   if (activeElement && activeElement.closest('#tinymce')) {
     activeEditorIframe = iframe;
@@ -81,7 +118,7 @@ function setupEditorFocusListener(iframe) {
 
 function monitorEditorContent(editorIframe) {
   if (activeObserver) {
-    activeObserver.disconnect(); // Disconnect the previous observer
+    activeObserver.disconnect();
   }
 
   const iframeDocument = editorIframe.contentDocument || editorIframe.contentWindow.document;
@@ -102,7 +139,7 @@ function monitorEditorContent(editorIframe) {
       subtree: true
     });
 
-    activeObserver = observer; // Set the new observer as active
+    activeObserver = observer;
 
     editorBody.addEventListener('keydown', handleKeyDown);
 
@@ -113,26 +150,38 @@ function monitorEditorContent(editorIframe) {
   }
 }
 
-let lastValidChar = "";
-let completions = [];
-let tooltip;
-let selectedIndex = 0;
-
 function getCurrentPosition(inputValue) {
-  const parts = inputValue.split(/[\s.:()]+/);
+  const parts = inputValue.split(/[\s.:]+/);
   return parts.length;
+}
+
+function isValidCommand(inputValue) {
+  if (inputValue === "") return true;
+
+  const cleanedInput = inputValue.replace(/\(.*?\)$/, '');
+
+  const inputParts = cleanedInput.split(/[\s.:]+/);
+
+  return inputParts.every(part => validSuggestionsSet.has(part));
 }
 
 function handleInput() {
   clearTimeout(inputTimeout);
 
   inputTimeout = setTimeout(() => {
-    if (isRequestInProgress || !activeEditorIframe) return;
+    if (!activeEditorIframe) return;
 
-    const editorContent = activeEditorIframe.contentDocument.body.innerText;
-    const inputValue = editorContent.trim();
+    const editorContent = activeEditorIframe.contentDocument.body.innerText.trim();
+    const inputValue = editorContent.split('\n').pop().trim();
 
-    const position = getCurrentPosition(inputValue);
+    // Überprüfen Sie das Vorhandensein von Klammern
+    const openParenthesesCount = (inputValue.match(/\(/g) || []).length;
+    const closeParenthesesCount = (inputValue.match(/\)/g) || []).length;
+
+    // Ignorieren Sie alles innerhalb der Klammern am Ende
+    const cleanedInput = inputValue.replace(/\(.*?\)$/, '');
+
+    const position = getCurrentPosition(cleanedInput);
 
     let lastChar = "";
     if (inputValue.length > 0) {
@@ -147,35 +196,45 @@ function handleInput() {
       }
     }
 
+    const inputParts = cleanedInput.split(/[\s.:]+/);
+
+    if (!isValidCommand(inputValue) || openParenthesesCount !== closeParenthesesCount) {
+      showWarningMessage();
+    } else {
+      hideWarningMessage();
+    }
+
+    console.log(`DEBUG: Position: ${position}, Input Parts: ${inputParts}, Last Char: ${lastChar}`);
+
+    if (position >= 5 && inputParts[3] !== "CAS") {
+      hideCompletionPopup();
+      return;
+    }
+
     if (lastChar !== "" && lastChar !== " " && lastChar !== "." && lastChar !== ":") {
       if (!suggestionUsed) {
         lastValidChar = lastChar;
-        console.log('DEBUG: Last valid character:', lastValidChar);
-
         localStorage.setItem('lastValidChar', lastValidChar);
+        previousSuggestions = editorContent.split(/[\s.:()]+/);
+        let relevantSuggestions = completions[position] || [];
 
-        if (chrome && chrome.runtime && chrome.runtime.sendMessage) {
-          isRequestInProgress = true;
-          previousSuggestions = editorContent.split(/[\s.:()]+/);
-          chrome.runtime.sendMessage({ type: 'TEXT_BOX_UPDATED', lastChar: lastValidChar, position: position, previousSuggestions: previousSuggestions }, response => {
-            isRequestInProgress = false;
-            if (chrome.runtime.lastError) {
-              console.error('DEBUG: ' + chrome.runtime.lastError.message);
-            } else {
-              console.log('DEBUG: Message sent successfully');
-            }
-          });
+        relevantSuggestions = sortCompletions(relevantSuggestions, lastValidChar);
+
+        console.log(`DEBUG: Showing suggestions for position ${position}:`, relevantSuggestions);
+
+        if (relevantSuggestions.length > 0) {
+          showCompletionPopup(inputValue, relevantSuggestions);
         } else {
-          console.log('DEBUG: Chrome runtime API is not available.');
+          hideCompletionPopup();
         }
       }
     } else {
       suggestionUsed = false;
-      console.log('DEBUG: No valid last character to process.');
       hideCompletionPopup();
     }
-  }, 300); // 300ms Timeout, um schnelle wiederholte Eingaben abzufangen
+  }, 300);
 }
+
 
 function handleKeyDown(event) {
   if (tooltip && tooltip.style.display === 'block') {
@@ -187,13 +246,12 @@ function handleKeyDown(event) {
       moveSelection(-1);
     } else if (event.key === 'Tab') {
       event.preventDefault();
-      const editorContent = activeEditorIframe.contentDocument.body.innerText;
-      selectCompletion(editorContent);
+      selectCompletion();
     }
   }
   
   if (event.key === ' ' || event.key === '.' || event.key === ':') {
-    suggestionUsed = false; // Reset suggestionUsed flag on space, dot, or colon
+    suggestionUsed = false;
   }
 }
 
@@ -212,15 +270,16 @@ function moveSelection(delta) {
   });
 }
 
-function selectCompletion(inputValue) {
-  if (selectedIndex < 0 || selectedIndex >= completions.length) return;
+function selectCompletion() {
+  const items = tooltip.querySelectorAll('.autocomplete-item');
+  if (selectedIndex < 0 || selectedIndex >= items.length) return;
 
-  const currentValue = inputValue;
-  const selectedCompletion = completions[selectedIndex].text;
-  const lastWord = currentValue.split(/[\s.:]+/).pop().toLowerCase();
-  const selectedCompletionLowerCase = selectedCompletion.toLowerCase();
+  const selectedCompletion = items[selectedIndex].querySelector('.autocomplete-suggestion-text').textContent;
 
-  suggestionUsed = true; // Mark suggestion as used
+  const editorContent = activeEditorIframe.contentDocument.body.innerText;
+  const lastWord = editorContent.split(/[\s.:]+/).pop().toLowerCase();
+
+  suggestionUsed = true;
 
   const selection = activeEditorIframe.contentWindow.getSelection();
   const range = selection.getRangeAt(0);
@@ -229,14 +288,6 @@ function selectCompletion(inputValue) {
 
   insertTextAtCursor(selectedCompletion);
   hideCompletionPopup();
-
-  const currentPosition = getCurrentPosition(currentValue);
-  if (selectedCompletion === "CAS" && currentPosition === 4) {
-    console.log("DEBUG: CAS selected at position 4.");
-  } else if (currentPosition <= 4) {
-    console.log("DEBUG: Position <= 4, not showing additional suggestions.");
-    hideCompletionPopup();
-  }
 }
 
 function insertTextAtCursor(text) {
@@ -248,54 +299,6 @@ function insertTextAtCursor(text) {
   range.setEndAfter(node);
   selection.removeAllRanges();
   selection.addRange(range);
-}
-
-function showAdditionalSuggestions() {
-  const position = 5;
-  const editorContent = activeEditorIframe.contentDocument.body.innerText;
-  previousSuggestions = editorContent.split(/[\s.:()]+/);
-  if (chrome && chrome.runtime && chrome.runtime.sendMessage) {
-    chrome.runtime.sendMessage({ type: 'TEXT_BOX_UPDATED', lastChar: lastValidChar, position: position, previousSuggestions: previousSuggestions }, response => {
-      if (chrome.runtime.lastError) {
-        console.error('DEBUG: ' + chrome.runtime.lastError.message);
-      } else {
-        console.log('DEBUG: Additional suggestions message sent successfully');
-      }
-    });
-  }
-}
-
-function sortCompletions(completions, lastChar) {
-  return completions.sort((a, b) => {
-    const aStartsWith = a.text.toLowerCase().startsWith(lastChar.toLowerCase());
-    const bStartsWith = b.text.toLowerCase().startsWith(lastChar.toLowerCase());
-    if (aStartsWith && !bStartsWith) return -1;
-    if (!aStartsWith && bStartsWith) return 1;
-    return 0;
-  });
-}
-
-function adjustTooltipWidth(tooltip, completions) {
-  const span = document.createElement('span');
-  span.style.visibility = 'hidden';
-  span.style.whiteSpace = 'nowrap';
-  span.style.position = 'absolute';
-  span.style.font = getComputedStyle(document.body).font;
-  document.body.appendChild(span);
-
-  let maxWidth = 0;
-
-  completions.forEach(completion => {
-    span.textContent = completion.text;
-    const itemWidth = span.offsetWidth;
-    if (itemWidth > maxWidth) {
-      maxWidth = itemWidth;
-    }
-  });
-
-  document.body.removeChild(span);
-
-  tooltip.style.width = `${maxWidth + 100}px`;
 }
 
 function showCompletionPopup(inputValue, completions) {
@@ -339,12 +342,12 @@ function showCompletionPopup(inputValue, completions) {
 
     item.addEventListener('mousedown', (e) => {
       e.preventDefault();
-      selectedIndex = index; // Set the selected index to the clicked item
-      selectCompletion(inputValue);
+      selectedIndex = index;
+      selectCompletion();
     });
     tooltip.appendChild(item);
   });
-
+  
   adjustTooltipWidth(tooltip, completions);
 
   tooltip.style.left = `${coords.left}px`;
@@ -361,6 +364,63 @@ function hideCompletionPopup() {
   if (tooltip) {
     tooltip.style.display = 'none';
   }
+}
+
+function showWarningMessage() {
+  if (!warningMessage) {
+    warningMessage = document.createElement('div');
+    warningMessage.id = 'warning-message';
+    warningMessage.textContent = 'Ungültiger Befehl!';
+    document.body.appendChild(warningMessage);
+  }
+
+  const iframeRect = activeEditorIframe.getBoundingClientRect();
+  warningMessage.style.position = 'fixed';
+  warningMessage.style.color = 'red';
+  warningMessage.style.fontWeight = 'bold';
+  warningMessage.style.marginLeft = '5px';
+  warningMessage.style.top = `${iframeRect.top}px`;
+  warningMessage.style.left = `${iframeRect.right + 10}px`;
+  warningMessage.style.display = 'block';
+}
+
+function hideWarningMessage() {
+  if (warningMessage) {
+    warningMessage.style.display = 'none';
+  }
+}
+
+function adjustTooltipWidth(tooltip, completions) {
+  const span = document.createElement('span');
+  span.style.visibility = 'hidden';
+  span.style.whiteSpace = 'nowrap';
+  span.style.position = 'absolute';
+  span.style.font = getComputedStyle(document.body).font;
+  document.body.appendChild(span);
+
+  let maxWidth = 0;
+
+  completions.forEach(completion => {
+    span.textContent = completion.text;
+    const itemWidth = span.offsetWidth;
+    if (itemWidth > maxWidth) {
+      maxWidth = itemWidth;
+    }
+  });
+
+  document.body.removeChild(span);
+
+  tooltip.style.width = `${maxWidth + 100}px`;
+}
+
+function sortCompletions(completions, lastChar) {
+  return completions.sort((a, b) => {
+    const aStartsWith = a.text.toLowerCase().startsWith(lastChar.toLowerCase());
+    const bStartsWith = b.text.toLowerCase().startsWith(lastChar.toLowerCase());
+    if (aStartsWith && !bStartsWith) return -1;
+    if (!aStartsWith && bStartsWith) return 1;
+    return 0;
+  });
 }
 
 const style = document.createElement('style');
@@ -393,21 +453,36 @@ style.innerHTML = `
         border: 1px solid #ccc;
         box-shadow: 0px 4px 8px rgba(0, 0, 0, 0.1);
     }
+    #warning-message {
+        background-color: #ffe6e6;
+        border: 1px solid red;
+        padding: 5px;
+        border-radius: 4px;
+        display: none;
+        margin-left: 5px;
+    }
 `;
 document.head.appendChild(style);
 
-chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
-  if (message.type === 'COMPLETION_RECEIVED') {
-    console.log('DEBUG: Completion received:', message.suggestions);
-    completions = message.suggestions;
-    const editorContent = activeEditorIframe.contentDocument.body.innerText;
-    const position = getCurrentPosition(editorContent);
-    if (position > 5 || (position === 5 && previousSuggestions[3] !== "CAS")) {
-      console.log('DEBUG: Position higher than 5 oder previous suggestion not CAS, no suggestions will be shown.');
-      return;
-    }
-    completions = sortCompletions(completions, localStorage.getItem('lastValidChar') || '');
-    showCompletionPopup(editorContent, completions);
-    sendResponse({ status: 'received' });
+window.addEventListener('scroll', () => {
+  if (tooltip && tooltip.style.display === 'block') {
+    const selection = activeEditorIframe.contentWindow.getSelection();
+    const range = selection.getRangeAt(0);
+    const rect = range.getBoundingClientRect();
+    const iframeRect = activeEditorIframe.getBoundingClientRect();
+
+    const coords = {
+      top: iframeRect.top + rect.bottom + window.scrollY,
+      left: iframeRect.left + rect.left + window.scrollX
+    };
+
+    tooltip.style.left = `${coords.left}px`;
+    tooltip.style.top = `${coords.top}px`;
+  }
+
+  if (warningMessage && warningMessage.style.display === 'block') {
+    const iframeRect = activeEditorIframe.getBoundingClientRect();
+    warningMessage.style.top = `${iframeRect.top}px`;
+    warningMessage.style.left = `${iframeRect.right + 10}px`;
   }
 });
