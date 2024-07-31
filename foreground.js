@@ -174,11 +174,9 @@ function handleInput() {
     const editorContent = activeEditorIframe.contentDocument.body.innerText.trim();
     const inputValue = editorContent.split('\n').pop().trim();
 
-    // Überprüfen Sie das Vorhandensein von Klammern
     const openParenthesesCount = (inputValue.match(/\(/g) || []).length;
     const closeParenthesesCount = (inputValue.match(/\)/g) || []).length;
 
-    // Ignorieren Sie alles innerhalb der Klammern am Ende
     const cleanedInput = inputValue.replace(/\(.*?\)$/, '');
 
     const position = getCurrentPosition(cleanedInput);
