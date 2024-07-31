@@ -9,19 +9,19 @@
         "default_icon": "startimg.png"
     },
     "permissions": [
-        "activeTab", "storage", "scripting", "tabs"
+        "activeTab"
     ],
     "host_permissions": [
         "*://*/*"
     ],
     "externally_connectable": {
-        "matches": ["https://tiejira.eil.risnet.de/"]
+        "matches": ["<all_urls>"]
     },
     "background": {
         "service_worker": "service-worker.js"
     },
     "content_scripts": [{
-        "matches": ["<all_urls>"],
+        "matches": ["https://tiejira.eil.risnet.de/projects/RDAQ/*"],
         "js": ["foreground.js"],
         "run_at": "document_end"
     }]
