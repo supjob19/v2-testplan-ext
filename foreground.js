@@ -151,27 +151,34 @@ function monitorEditorContent(editorIframe) {
 }
 
 function getCurrentPosition(inputValue) {
-  const parts = inputValue.split(/[\s.:()]+/);
+  const parts = inputValue.split(/[\s.:]+/);
   return parts.length;
 }
 
 function isValidCommand(inputValue) {
   if (inputValue === "") return true;
 
-  const inputParts = inputValue.split(/[\s.:()]+/);
+  const cleanedInput = inputValue.replace(/\(.*?\)$/, '');
+
+  const inputParts = cleanedInput.split(/[\s.:]+/);
+
   return inputParts.every(part => validSuggestionsSet.has(part));
 }
 
 function handleInput() {
   clearTimeout(inputTimeout);
 
+ 
   inputTimeout = setTimeout(() => {
     if (!activeEditorIframe) return;
 
     const editorContent = activeEditorIframe.contentDocument.body.innerText.trim();
     const inputValue = editorContent.split('\n').pop().trim();
 
-    const position = getCurrentPosition(inputValue);
+    // Ignorieren Sie alles innerhalb der Klammern am Ende
+    const cleanedInput = inputValue.replace(/\(.*?\)$/, '');
+
+    const position = getCurrentPosition(cleanedInput);
 
     let lastChar = "";
     if (inputValue.length > 0) {
@@ -186,10 +193,17 @@ function handleInput() {
       }
     }
 
-    if (!isValidCommand(inputValue)) {
+    if (!isValidCommand(cleanedInput)) {
       showWarningMessage();
     } else {
       hideWarningMessage();
+    }
+
+    const inputParts = cleanedInput.split(/[\s.:]+/);
+
+    if (position >= 5 && inputParts[3] !== "CAS") {
+      hideCompletionPopup();
+      return;
     }
 
     if (lastChar !== "" && lastChar !== " " && lastChar !== "." && lastChar !== ":") {
@@ -199,13 +213,13 @@ function handleInput() {
         previousSuggestions = editorContent.split(/[\s.:()]+/);
         let relevantSuggestions = completions[position] || [];
 
-        if (position === 5 && previousSuggestions[3] !== "CAS") {
-          relevantSuggestions = [];
-        }
-
         relevantSuggestions = sortCompletions(relevantSuggestions, lastValidChar);
 
-        showCompletionPopup(inputValue, relevantSuggestions);
+        if (relevantSuggestions.length > 0) {
+          showCompletionPopup(inputValue, relevantSuggestions);
+        } else {
+          hideCompletionPopup();
+        }
       }
     } else {
       suggestionUsed = false;
