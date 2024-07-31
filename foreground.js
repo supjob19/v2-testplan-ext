@@ -30,22 +30,20 @@ let suggestionUsed = false;
 let previousSuggestions = [];
 let activeEditorIframe = null;
 let activeObserver = null;
-let tooltip = null;
+let warningMessage = null;
 
 function initializeEditorListeners() {
-  // Check for iframes every 500 milliseconds
+  // Check for iframes every 100 milliseconds
   setInterval(() => {
     const iframes = document.querySelectorAll('iframe');
-    //console.log('DEBUG: Number of iframes found:', iframes.length);  // Anzahl der iframes protokollieren
-
     iframes.forEach(iframe => {
       if (!iframe._hasFocusListener) {
         setupEditorFocusListener(iframe);
-        iframe._hasFocusListener = true;  // Mark the iframe as having a focus listener
+        iframe._hasFocusListener = true; // Mark the iframe as having a focus listener
       }
     });
-  }, 500);
-  
+  }, 100);
+
   // Add click listener to document to hide tooltip when clicking outside
   document.addEventListener('click', function (event) {
     if (tooltip && tooltip.style.display === 'block' && !tooltip.contains(event.target)) {
@@ -77,7 +75,6 @@ function setupEditorFocusListener(iframe) {
         monitorEditorContent(iframe); // Attach event listeners to the new editor
       }
     }
-    hideCompletionPopup(); // Hide tooltip when clicking inside the editor
   });
 
   // Check if the current focused element is an editor body on initial load
@@ -124,11 +121,21 @@ function monitorEditorContent(editorIframe) {
 
 let lastValidChar = "";
 let completions = [];
+let tooltip;
 let selectedIndex = 0;
 
 function getCurrentPosition(inputValue) {
   const parts = inputValue.split(/[\s.:()]+/);
   return parts.length;
+}
+
+function isValidCommand(inputValue) {
+  if (inputValue === "") return true; // Consider empty input as valid
+
+  const inputParts = inputValue.split(/[\s.:()]+/);
+  return inputParts.every((part, index) => {
+    return completions.some(completion => completion.text === part);
+  });
 }
 
 function handleInput() {
@@ -137,18 +144,17 @@ function handleInput() {
   inputTimeout = setTimeout(() => {
     if (isRequestInProgress || !activeEditorIframe) return;
 
-    const editorContent = activeEditorIframe.contentDocument.body.innerText.trim();
-    const lines = editorContent.split('\n');
-    const currentLine = lines[lines.length - 1]; // Process only the current line
+    const editorContent = activeEditorIframe.contentDocument.body.innerText;
+    const inputValue = editorContent.trim();
 
-    const position = getCurrentPosition(currentLine);
+    const position = getCurrentPosition(inputValue);
 
     let lastChar = "";
-    if (currentLine.length > 0) {
-      for (let i = currentLine.length - 1; i >= 0; i--) {
-        const char = currentLine.charAt(i);
+    if (inputValue.length > 0) {
+      for (let i = inputValue.length - 1; i >= 0; i--) {
+        const char = inputValue.charAt(i);
         if (char !== " " && char !== "") {
-          if (i === 0 || currentLine.charAt(i - 1) === " " || currentLine.charAt(i - 1) === "." || currentLine.charAt(i - 1) === ":") {
+          if (i === 0 || inputValue.charAt(i - 1) === " " || inputValue.charAt(i - 1) === "." || inputValue.charAt(i - 1) === ":") {
             lastChar = char;
             break;
           }
@@ -156,16 +162,20 @@ function handleInput() {
       }
     }
 
+    if (!isValidCommand(inputValue)) {
+      showWarningMessage();
+    } else {
+      hideWarningMessage();
+    }
+
     if (lastChar !== "" && lastChar !== " " && lastChar !== "." && lastChar !== ":") {
       if (!suggestionUsed) {
         lastValidChar = lastChar;
-        //console.log('DEBUG: Last valid character:', lastValidChar);
-
         localStorage.setItem('lastValidChar', lastValidChar);
 
         if (chrome && chrome.runtime && chrome.runtime.sendMessage) {
           isRequestInProgress = true;
-          previousSuggestions = currentLine.split(/[\s.:()]+/);
+          previousSuggestions = editorContent.split(/[\s.:()]+/);
           chrome.runtime.sendMessage({ type: 'TEXT_BOX_UPDATED', lastChar: lastValidChar, position: position, previousSuggestions: previousSuggestions }, response => {
             isRequestInProgress = false;
             if (chrome.runtime.lastError) {
@@ -180,10 +190,9 @@ function handleInput() {
       }
     } else {
       suggestionUsed = false;
-      //console.log('DEBUG: No valid last character to process.');
       hideCompletionPopup();
     }
-  }, 300); // 300ms Timeout, um schnelle wiederholte Eingaben abzufangen
+  }, 300); // 300ms timeout to prevent rapid inputs
 }
 
 function handleKeyDown(event) {
@@ -196,10 +205,8 @@ function handleKeyDown(event) {
       moveSelection(-1);
     } else if (event.key === 'Tab') {
       event.preventDefault();
-      const editorContent = activeEditorIframe.contentDocument.body.innerText.trim();
-      const lines = editorContent.split('\n');
-      const currentLine = lines[lines.length - 1];
-      selectCompletion(currentLine);
+      const editorContent = activeEditorIframe.contentDocument.body.innerText;
+      selectCompletion(editorContent);
     }
   }
   
@@ -263,10 +270,8 @@ function insertTextAtCursor(text) {
 
 function showAdditionalSuggestions() {
   const position = 5;
-  const editorContent = activeEditorIframe.contentDocument.body.innerText.trim();
-  const lines = editorContent.split('\n');
-  const currentLine = lines[lines.length - 1];
-  previousSuggestions = currentLine.split(/[\s.:()]+/);
+  const editorContent = activeEditorIframe.contentDocument.body.innerText;
+  previousSuggestions = editorContent.split(/[\s.:()]+/);
   if (chrome && chrome.runtime && chrome.runtime.sendMessage) {
     chrome.runtime.sendMessage({ type: 'TEXT_BOX_UPDATED', lastChar: lastValidChar, position: position, previousSuggestions: previousSuggestions }, response => {
       if (chrome.runtime.lastError) {
@@ -376,6 +381,30 @@ function hideCompletionPopup() {
   }
 }
 
+function showWarningMessage() {
+  if (!warningMessage) {
+    warningMessage = document.createElement('div');
+    warningMessage.id = 'warning-message';
+    warningMessage.textContent = 'Ungültiger Befehl!';
+    document.body.appendChild(warningMessage);
+  }
+
+  const iframeRect = activeEditorIframe.getBoundingClientRect();
+  warningMessage.style.position = 'fixed';
+  warningMessage.style.color = 'red';
+  warningMessage.style.fontWeight = 'bold';
+  warningMessage.style.marginLeft = '5px';
+  warningMessage.style.top = `${iframeRect.top}px`;
+  warningMessage.style.left = `${iframeRect.right + 10}px`;
+  warningMessage.style.display = 'block';
+}
+
+function hideWarningMessage() {
+  if (warningMessage) {
+    warningMessage.style.display = 'none';
+  }
+}
+
 const style = document.createElement('style');
 style.innerHTML = `
     .autocomplete-item {
@@ -406,23 +435,50 @@ style.innerHTML = `
         border: 1px solid #ccc;
         box-shadow: 0px 4px 8px rgba(0, 0, 0, 0.1);
     }
+    #warning-message {
+        background-color: #ffe6e6;
+        border: 1px solid red;
+        padding: 5px;
+        border-radius: 4px;
+        display: none;
+        margin-left: 5px;
+    }
 `;
 document.head.appendChild(style);
 
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   if (message.type === 'COMPLETION_RECEIVED') {
-    //console.log('DEBUG: Completion received:', message.suggestions);
     completions = message.suggestions;
-    const editorContent = activeEditorIframe.contentDocument.body.innerText.trim();
-    const lines = editorContent.split('\n');
-    const currentLine = lines[lines.length - 1];
-    const position = getCurrentPosition(currentLine);
+    const editorContent = activeEditorIframe.contentDocument.body.innerText;
+    const position = getCurrentPosition(editorContent);
     if (position > 5 || (position === 5 && previousSuggestions[3] !== "CAS")) {
-      //console.log('DEBUG: Position higher than 5 oder previous suggestion not CAS, no suggestions will be shown.');
       return;
     }
     completions = sortCompletions(completions, localStorage.getItem('lastValidChar') || '');
-    showCompletionPopup(currentLine, completions);
+    showCompletionPopup(editorContent, completions);
     sendResponse({ status: 'received' });
+  }
+});
+
+window.addEventListener('scroll', () => {
+  if (tooltip && tooltip.style.display === 'block') {
+    const selection = activeEditorIframe.contentWindow.getSelection();
+    const range = selection.getRangeAt(0);
+    const rect = range.getBoundingClientRect();
+    const iframeRect = activeEditorIframe.getBoundingClientRect();
+
+    const coords = {
+      top: iframeRect.top + rect.bottom + window.scrollY,
+      left: iframeRect.left + rect.left + window.scrollX
+    };
+
+    tooltip.style.left = `${coords.left}px`;
+    tooltip.style.top = `${coords.top}px`;
+  }
+
+  if (warningMessage && warningMessage.style.display === 'block') {
+    const iframeRect = activeEditorIframe.getBoundingClientRect();
+    warningMessage.style.top = `${iframeRect.top}px`;
+    warningMessage.style.left = `${iframeRect.right + 10}px`;
   }
 });
