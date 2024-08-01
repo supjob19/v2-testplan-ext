@@ -143,7 +143,7 @@ function monitorEditorContent(editorIframe) {
 
     editorBody.addEventListener('keydown', handleKeyDown);
 
-    console.log("DEBUG: Editor listeners and observer set up");
+    //console.log("DEBUG: Editor listeners and observer set up");
   } else {
     console.log('DEBUG: Editor body not found. Retrying...');
     setTimeout(() => monitorEditorContent(editorIframe), 100);
@@ -202,7 +202,7 @@ function handleInput() {
       hideWarningMessage();
     }
 
-    console.log(`DEBUG: Position: ${position}, Input Parts: ${inputParts}, Last Char: ${lastChar}`);
+    //console.log(`DEBUG: Position: ${position}, Input Parts: ${inputParts}, Last Char: ${lastChar}`);
 
     if (position >= 5 && inputParts[3] !== "CAS") {
       hideCompletionPopup();
@@ -218,7 +218,7 @@ function handleInput() {
 
         relevantSuggestions = sortCompletions(relevantSuggestions, lastValidChar);
 
-        console.log(`DEBUG: Showing suggestions for position ${position}:`, relevantSuggestions);
+        //console.log(`DEBUG: Showing suggestions for position ${position}:`, relevantSuggestions);
 
         if (relevantSuggestions.length > 0) {
           showCompletionPopup(inputValue, relevantSuggestions);
@@ -232,7 +232,6 @@ function handleInput() {
     }
   }, 300);
 }
-
 
 function handleKeyDown(event) {
   if (tooltip && tooltip.style.display === 'block') {
